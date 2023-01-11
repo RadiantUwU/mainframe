@@ -46,6 +46,11 @@ local function newIsolatedProcessTable()
 	local processmt = {}
 	processmt.__index = processmt
 	function processmt:sendSignal(sig)
+		if processesthr[coroutine.running()] then
+			if processesthr[coroutine.running()].user ~= self.user then return end
+		else
+			return
+		end
 		if self.state == "I" then
 			if sig == signals.SIGKILL or sig == signals.SIGTERM or sig == signals.SIGABRT or sig == signals.SIGHUP then
 				self.thr = nil

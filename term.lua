@@ -271,6 +271,13 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					sysreboot()
 				elseif c == "c" then
 					syshalt()
+				elseif c == "e" then
+					for id,proc in pairs(processtable) do
+						coroutine.wrap(function()
+							pr.processesthr[coroutine.running()] = krnlprocplaceholder
+							proc:terminate()
+						)()
+					end
 				end
 			end
 		end),"sysrq-trigger",procdir,nil,"-w--w----")
@@ -332,7 +339,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if powerdown then return end
 		powerdown = true
 		if processtable[1] then
-			processtable[1]:kill()
+			coroutine.wrap(function()
+				pr.processesthr[coroutine.running()] = krnlprocplaceholder
+				processtable[1]:kill()
+			end)()
 		end
 		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
 		task.wait(0.4)
@@ -348,7 +358,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if powerdown then return end
 		powerdown = true
 		if processtable[1] then
-			processtable[1]:kill()
+			coroutine.wrap(function()
+				pr.processesthr[coroutine.running()] = krnlprocplaceholder
+				processtable[1]:kill()
+			end)()
 		end
 		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
 		task.wait(0.4)
@@ -363,7 +376,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if powerdown then return end
 		powerdown = true
 		if processtable[1] then
-			processtable[1]:kill()
+			coroutine.wrap(function()
+				pr.processesthr[coroutine.running()] = krnlprocplaceholder
+				processtable[1]:kill()
+			end)()
 		end
 		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
 		task.wait(0.4)
@@ -466,7 +482,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	local function cdinit(proc)
 		local dir = proc.parent:getEnv("workingDir")
 		if dir then
-			local nerr,res = pcall(dir.subread)(dir,proc.argv[2])
+			local nerr,res = pcall(dir.to)(dir,proc.argv[2])
 			if nerr then
 				if res then
 					if res:isADirectory() then
@@ -493,16 +509,62 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	newExecutable(newCd,"cd",bindir,nil,"rwxrwxr-x")
 	local function dirinit(proc)
 		local dir = proc.argv[2]
+		if type(dir) == "string" then
+			local wd = proc.parent:getEnv("workingDir")
+			if wd then
+				local nerr,dir_ = wd:to(dir)
+				if nerr then
+					if dir_ then
+						dir = dir_
+					else
+						stderr:write("Path not found.\n")
+						proc:ret(1)
+						return
+					end
+				else
+					if dir_ == "access denied" then
+						stderr:write("Access denied.\n")
+					else
+						stderr:write(dir_ .. "\n")
+					end
+					proc:ret(1)
+					return
+				end
+			else
+				local nerr,dir_ = rootdir:to(dir,true)
+				if nerr then
+					if dir_ then
+						dir = dir_
+					else
+						stderr:write("Path not found.\n")
+						proc:ret(1)
+						return
+					end
+				else
+					if dir_ == "access denied" then
+						stderr:write("Access denied.\n")
+					else
+						stderr:write(dir_ .. "\n")
+					end
+					proc:ret(1)
+					return
+				end
+			end
+		end
 		if type(dir) == "table" then
 			if dir.isADirectory then
 				if dir:isADirectory() then
-					if not dir:canAccess() and not dir:canRead() then
+					if not dir:canAccess() then
 						stderr:write("Access denied.\n")
 						proc:ret(1)
 						return
 					else
 						local dirs = dir:access()
-
+						for _,i in ipairs(dirs) do
+							stdout:write(i .. "\n")
+						end
+						proc:ret(0)
+						return
 					end
 				else
 					stderr:write("Not a directory\n")
@@ -520,6 +582,8 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			return
 		end
 	end
+	local function newDir() return dirinit,{} end
+	newExecutable(newDir,"dir",bindir,nil,"rwxrwxr-x")
 	local initfile = newExecutable(newInit,"init",sbindir,nil,"rwxrw----")
 	local ip = initfile:execute()
 	ip.pid = 1

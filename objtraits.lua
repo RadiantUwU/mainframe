@@ -44,6 +44,48 @@ function objtraits:getFullPath()
         return "/"
     end
 end
+function objtraits:to(path,absoluteassert)
+    path = path or "/"
+    local isabsolute = path:sub(1,1) == "/"
+    if absoluteassert then assert(isabsoulte,"pathname must be absolute") end
+    local dir = self
+    if isabsolute then
+        while dir.parent ~= nil then
+            dir = dir.parent
+        end
+        path = path:sub(2,-1)
+    end
+    if path == "" then
+        return dir
+    end
+    local buf = ""
+    for _,c in ipairs(into_chars(path)) do
+        if c == "/" then
+            if buf == "." then
+
+            elseif buf == ".." then
+                if dir.parent ~= nil then dir = dir.parent end
+            else
+                dir = dir:subread(buf)
+                if not dir then return end
+            end
+            buf = ""
+        else
+            buf = buf .. c
+        end
+    end
+    if buf ~= "" then
+        if buf == "." then
+
+        elseif buf == ".." then
+            if dir.parent ~= nil then dir = dir.parent end
+        else
+            dir = dir:subread(buf)
+            if not dir then return end
+        end
+    end
+    return dir
+end
 function objtraits:getPerms()
     return self.perms,self.owner
 end
