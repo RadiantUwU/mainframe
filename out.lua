@@ -370,6 +370,48 @@ function objtraits:getFullPath()
         return "/"
     end
 end
+function objtraits:to(path,absoluteassert)
+    path = path or "/"
+    local isabsolute = path:sub(1,1) == "/"
+    if absoluteassert then assert(isabsoulte,"pathname must be absolute") end
+    local dir = self
+    if isabsolute then
+        while dir.parent ~= nil then
+            dir = dir.parent
+        end
+        path = path:sub(2,-1)
+    end
+    if path == "" then
+        return dir
+    end
+    local buf = ""
+    for _,c in ipairs(into_chars(path)) do
+        if c == "/" then
+            if buf == "." then
+
+            elseif buf == ".." then
+                if dir.parent ~= nil then dir = dir.parent end
+            else
+                dir = dir:subread(buf)
+                if not dir then return end
+            end
+            buf = ""
+        else
+            buf = buf .. c
+        end
+    end
+    if buf ~= "" then
+        if buf == "." then
+
+        elseif buf == ".." then
+            if dir.parent ~= nil then dir = dir.parent end
+        else
+            dir = dir:subread(buf)
+            if not dir then return end
+        end
+    end
+    return dir
+end
 function objtraits:getPerms()
     return self.perms,self.owner
 end
@@ -1102,6 +1144,11 @@ local function newIsolatedProcessTable()
 	local processmt = {}
 	processmt.__index = processmt
 	function processmt:sendSignal(sig)
+		if processesthr[coroutine.running()] then
+			if processesthr[coroutine.running()].user ~= self.user then return end
+		else
+			return
+		end
 		if self.state == "I" then
 			if sig == signals.SIGKILL or sig == signals.SIGTERM or sig == signals.SIGABRT or sig == signals.SIGHUP then
 				self.thr = nil
@@ -1564,6 +1611,13 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					sysreboot()
 				elseif c == "c" then
 					syshalt()
+				elseif c == "e" then
+					for id,proc in pairs(processtable) do
+						coroutine.wrap(function()
+							pr.processesthr[coroutine.running()] = krnlprocplaceholder
+							proc:terminate()
+						)()
+					end
 				end
 			end
 		end),"sysrq-trigger",procdir,nil,"-w--w----")
@@ -1625,7 +1679,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if powerdown then return end
 		powerdown = true
 		if processtable[1] then
-			processtable[1]:kill()
+			coroutine.wrap(function()
+				pr.processesthr[coroutine.running()] = krnlprocplaceholder
+				processtable[1]:kill()
+			end)()
 		end
 		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
 		task.wait(0.4)
@@ -1641,7 +1698,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if powerdown then return end
 		powerdown = true
 		if processtable[1] then
-			processtable[1]:kill()
+			coroutine.wrap(function()
+				pr.processesthr[coroutine.running()] = krnlprocplaceholder
+				processtable[1]:kill()
+			end)()
 		end
 		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
 		task.wait(0.4)
@@ -1656,7 +1716,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if powerdown then return end
 		powerdown = true
 		if processtable[1] then
-			processtable[1]:kill()
+			coroutine.wrap(function()
+				pr.processesthr[coroutine.running()] = krnlprocplaceholder
+				processtable[1]:kill()
+			end)()
 		end
 		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
 		task.wait(0.4)
@@ -1723,13 +1786,14 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if isInRootGroup(proc.user) then
 			syspoweroff()
 		end
-		if not code then proc:ret(19) -- access denied
+		if not code then
+			stderr:write("access denied.\n")
+			proc:ret(19) -- access denied
 		else
 			proc.stdout:write("Code:")
 			proc.privenv.code = ""
 		end
 	end
-
 	local function newEpo()
 		return epoinit,{
 			[signals.SIGALRM]=function(proc)
@@ -1739,7 +1803,6 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						c = stdin:read(1)
 						if c == "\n" then
 							if proc.privenv.code == code then
-								stdout:write("Emergency poweroff.")
 								syspoweroff()
 								return
 							else
@@ -1756,6 +1819,111 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		}
 	end
 	newExecutable(newEpo,"epo",bindir,nil,"rwxrwxr-x")
+	local function cdinit(proc)
+		local dir = proc.parent:getEnv("workingDir")
+		if dir then
+			local nerr,res = pcall(dir.to)(dir,proc.argv[2])
+			if nerr then
+				if res then
+					if res:isADirectory() then
+						proc.parent.pubenv.workingDir = res
+						proc:ret(0)
+					else
+						stderr:write("Not a directory.\n")
+						proc:ret(2)
+					end
+				else
+					stderr:write("Link not found.\n")
+					proc:ret(3)
+				end
+			else
+				stderr:write("An error occurred while changing directory: "..res.."\n")
+				proc:ret(4)
+			end
+		else
+			stderr:write("Parent process does not support cd.")
+			proc:ret(1)
+		end
+	end
+	local function newCd() return cdinit,{} end
+	newExecutable(newCd,"cd",bindir,nil,"rwxrwxr-x")
+	local function dirinit(proc)
+		local dir = proc.argv[2]
+		if type(dir) == "string" then
+			local wd = proc.parent:getEnv("workingDir")
+			if wd then
+				local nerr,dir_ = wd:to(dir)
+				if nerr then
+					if dir_ then
+						dir = dir_
+					else
+						stderr:write("Path not found.\n")
+						proc:ret(1)
+						return
+					end
+				else
+					if dir_ == "access denied" then
+						stderr:write("Access denied.\n")
+					else
+						stderr:write(dir_ .. "\n")
+					end
+					proc:ret(1)
+					return
+				end
+			else
+				local nerr,dir_ = rootdir:to(dir,true)
+				if nerr then
+					if dir_ then
+						dir = dir_
+					else
+						stderr:write("Path not found.\n")
+						proc:ret(1)
+						return
+					end
+				else
+					if dir_ == "access denied" then
+						stderr:write("Access denied.\n")
+					else
+						stderr:write(dir_ .. "\n")
+					end
+					proc:ret(1)
+					return
+				end
+			end
+		end
+		if type(dir) == "table" then
+			if dir.isADirectory then
+				if dir:isADirectory() then
+					if not dir:canAccess() then
+						stderr:write("Access denied.\n")
+						proc:ret(1)
+						return
+					else
+						local dirs = dir:access()
+						for _,i in ipairs(dirs) do
+							stdout:write(i .. "\n")
+						end
+						proc:ret(0)
+						return
+					end
+				else
+					stderr:write("Not a directory\n")
+					proc:ret(1)
+					return
+				end
+			else
+				stderr:write("Not a directory\n")
+				proc:ret(1)
+				return
+			end	
+		else
+			stderr:write("Not a directory\n")
+			proc:ret(1)
+			return
+		end
+	end
+	local function newDir() return dirinit,{} end
+	newExecutable(newDir,"dir",bindir,nil,"rwxrwxr-x")
 	local initfile = newExecutable(newInit,"init",sbindir,nil,"rwxrw----")
 	local ip = initfile:execute()
 	ip.pid = 1
