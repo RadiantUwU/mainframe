@@ -273,14 +273,23 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					syshalt()
 				elseif c == "e" then
 					for id,proc in pairs(processtable) do
+						if id == 1 then return end
 						coroutine.wrap(function()
 							pr.processesthr[coroutine.running()] = krnlprocplaceholder
 							proc:terminate()
 						)()
 					end
+				elseif c == "i" then
+					for id,proc in pairs(processtable) do
+						if id == 1 then return end
+						coroutine.wrap(function()
+							pr.processesthr[coroutine.running()] = krnlprocplaceholder
+							proc:kill()
+						)()
+					end
 				end
 			end
-		end),"sysrq-trigger",procdir,nil,"-w--w----")
+		end),"sysrq-trigger",procdir,nil,"rw-rw----")
 	end
 	procdir = newStreamDirectory(function(op,name,objtow)
 		if op == "r" then
@@ -584,6 +593,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	end
 	local function newDir() return dirinit,{} end
 	newExecutable(newDir,"dir",bindir,nil,"rwxrwxr-x")
+	local function whoamiinit(proc)
+		
+	end
+	local function newwhoami() return whoamiinit,{} end
 	local initfile = newExecutable(newInit,"init",sbindir,nil,"rwxrw----")
 	local ip = initfile:execute()
 	ip.pid = 1
