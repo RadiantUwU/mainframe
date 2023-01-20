@@ -68,6 +68,7 @@ local function newTerm(devname,user,prompt,stdinf,stdoutf,stderrf,termname,pr,ro
 		proc.pubenv.USER = user
 		proc.pubenv.HOSTNAME = devname
 		proc.pubenv.PS1 = prompt
+		proc.pubenv.workingDir = rootdir
 		stdout:write(string.char(18).."B")
 		--[[
 		--set as init
@@ -197,7 +198,7 @@ local function newTerm(devname,user,prompt,stdinf,stdoutf,stderrf,termname,pr,ro
 		end
 	},nil,procparent,user),function() return waitingon end
 end
-local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel API
+local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel API, public accessible API
 	stdoutf("[0.00000] [kernel] initializing")
 	local ti = os.clock()
 	local function rawIsIn(t,v)
@@ -469,7 +470,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				if proc.privenv.code then
 					local c = nil
 					while c ~= "" do
-						c = stdin:read(1)
+						c = stdin:read(1
 						if c == "\n" then
 							if proc.privenv.code == code then
 								syspoweroff()
@@ -487,7 +488,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			end
 		}
 	end
-	newExecutable(newEpo,"epo",bindir,nil,"rwxrwxr-x")
+	newExecutable(newEpo,"epo",bindir,"root","rwxrwxr-x")
 	local function cdinit(proc)
 		local dir = proc.parent:getEnv("workingDir")
 		if dir then
@@ -515,7 +516,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		end
 	end
 	local function newCd() return cdinit,{} end
-	newExecutable(newCd,"cd",bindir,nil,"rwxrwxr-x")
+	newExecutable(newCd,"cd",bindir,"root","rwxrwxr-x")
 	local function dirinit(proc)
 		local dir = proc.argv[2]
 		if type(dir) == "string" then
@@ -592,18 +593,85 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		end
 	end
 	local function newDir() return dirinit,{} end
-	newExecutable(newDir,"dir",bindir,nil,"rwxrwxr-x")
+	newExecutable(newDir,"ls",bindir,"root","rwxrwxr-x")
+	newExecutable(newDir,"dir",bindir,"root","rwxrwxr-x")
 	local function whoamiinit(proc)
-		
+		local nerr,hostname = pcall(rootdir:to("/etc/hostname"))
+		if not nerr then
+			proc.stderr:write("failed to open /etc/hostname\n")
+			proc:ret(1)
+			return
+		end
+		nerr = pcall(function ()
+			hostname = hostname:read()
+		end)
+		if not nerr then
+			proc.stderr:write("failed to open /etc/hostname\n")
+			proc:ret(1)
+			return
+		end
+		proc.stdout:write(proc.user .. "@" .. hostname)
+		proc:ret(0)
 	end
 	local function newwhoami() return whoamiinit,{} end
-	local initfile = newExecutable(newInit,"init",sbindir,nil,"rwxrw----")
+	newExecutable(newwhoami,"whoami",bindir,"root","rwxrwxr-x")
+	local function catinit(proc)
+		local filetoreadpath = proc.argv[2]
+		if filetoreadpath == nil then
+			proc.stderr:write("no file specified\n")
+			proc:ret(1)
+			return
+		end
+		local file,nerr
+		if proc.pubenv.workingDir != nil then
+			nerr,file = pcall(function()
+				return proc.pubenv.workingDir:to(filetoreadpath)
+			end)
+		else
+			nerr,file = pcall(function()
+				return rootdir:to(filetoreadpath,true)
+			end)
+		end
+		if not nerr then
+			proc.stderr:write(file .. "\n")
+			proc:ret(1)
+			return
+		end
+		if file == nil then
+			proc.stderr:write("file not found\n")
+			proc:ret(1)
+			return
+		end
+		nerr,file = pcall(function()
+			return file:read()
+		end)
+		if not nerr then
+			proc.stderr:write(file .. "\n")
+			proc:ret(1)
+			return
+		end
+		proc.stdout:write(file)
+		proc:ret(0)
+	end
+	local function newcat() return catinit,{} end
+	newExecutable(newcat,"cat",bindir,"root","rwxrwxr-x")
+	local initfile = newExecutable(newInit,"init",sbindir,"root","rwxrw----")
 	local ip = initfile:execute()
 	ip.pid = 1
 	ip.stdin = newStdIn(stdinf)
 	ip.stdout = newStdOut(stdoutf)
 	ip.stderr = newStdOut(stderrf)
-	return ip,{
+	local getRunningUser = function()
+		local proc = processesthr[coroutine.running()]
+		if proc then
+			return proc.user
+		end
+	end
+	local ownsGroup = function(group,user)
+		if user == "root" then return true end
+		return user == group
+	end
+	local privatekernelAPI = {
 		syspoweroff = syspoweroff,
 		syshalt = syshalt,
 		sysreboot = sysreboot,
@@ -613,8 +681,9 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		setEPOCode=function(codetoset)
 			code = codetoset
 		end
-		reProcAnyRoot=function()
-			pr.processesthr[coroutine.running()]={user="root"}
+		reProcAnyRoot=function(procholder)
+			procholder = procholder or ip -- init process
+			pr.processesthr[coroutine.running()]=procholder
 		end
 		powerdownhook=function(f)
 			--function (action) -> ?
@@ -647,6 +716,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		newStreamFile = du.newStreamFile,
 		newStreamDirectory = du.newStreamDirectory,
 		devdir = devdir,
+		bindir = bindir,
 		state = function()
 			if powerdown == false then
 				return "Running"
@@ -654,4 +724,34 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			return "Offline"
 		end
 	}
+	local publicKernelAPI = {
+		rootfs = rootdir,
+		getRunningUser = getRunningUser,
+		isThreadRooted = function()
+			local user = getRunningUser()
+			if user == nil then return false end
+			return isInGroup("root",user)
+		end,
+		isInGroup=isInGroup,
+		isCurrentInGroup=function(group)
+			local user = getRunningUser()
+			if user == nil then return false end
+			return isInGroup(group,user)
+		end,
+		addUserToGroup=function(group,user)
+			local cu = getRunningUser()
+			if user == nil then error("access denied")
+			if ownsGroup(group,cu) then
+				privatekernelAPI.addUserInGroup(group,user)
+			end
+		end,
+		removeUserFromGroup=function(group,user)
+			local cu = getRunningUser()
+			if user == nil then error("access denied")
+			if ownsGroup(group,cu) then
+				privatekernelAPI.removeUserInGroup(group,user)
+			end
+		end
+	}
+	return ip,privatekernelAPI,publicKernelAPI
 end

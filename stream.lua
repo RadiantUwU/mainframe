@@ -91,21 +91,33 @@ local function newStdOut(f)
 	s = setmetatable({__gen=stdoutgen,__buf=""},genstreamfuncs)
 	return s
 end
-local function propagateStream(stream,op,arg)
+local function streamnull(op,arg)
 	if op == "r" then
-		if arg == -1 then
-			return stream:readAll()
-		else
-			return stream:read(arg)
-		end
-	elseif op == "c" then
-		stream:close()
-	elseif op == "s" then
-		stream:seek(arg)
+		return ""
 	elseif op == "l" then
-		return stream:available()
-	elseif op == "w" then
-		stream:write(arg)
+		return 0
+	end
+end
+local function newNullStream()
+	return newStreamGen(streamnull)
+end
+local function propagateStream(stream)
+	return function(op,arg)
+		if op == "r" then
+			if arg == -1 then
+				return stream:readAll()
+			else
+				return stream:read(arg)
+			end
+		elseif op == "c" then
+			stream:close()
+		elseif op == "s" then
+			stream:seek(arg)
+		elseif op == "l" then
+			return stream:available()
+		elseif op == "w" then
+			stream:write(arg)
+		end
 	end
 end
 --stdout works for stderr too

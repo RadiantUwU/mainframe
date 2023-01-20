@@ -43,7 +43,11 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     function dirmt:subwrite(name,obj)
         local proc = getCurrentProc()
         if objtraits.canWrite(self,proc,grouptbl) then
+            if __dir[self][name] != nil then
+                __dir[self][name].parent = nil
+            end
             __dir[self][name] = obj
+            obj.parent = self
             return
         end
         error("permission error")
@@ -242,10 +246,16 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     end
     function filemt:read(at,amount)
         local proc = getCurrentProc()
+        at = at or 1
+        amount = amount or -1
         if objtraits.canRead(self,proc,grouptbl) then
             if (at == nil) and (amount == nil) then return __file[self]
             else
-                return __file[self]:sub(at+1,at+1+amount)
+                if amount == -1 then
+                    return __file[self]:sub(at,-1)
+                else
+                    return __file[self]:sub(at,at+amount)
+                end
             end
         end
         error("permission error")
@@ -349,12 +359,19 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
         return false
     end
     function streamt:read(at,amount)
+        at = at or 1
+        amount = amount or -1
         local proc = getCurrentProc()
         if objtraits.canRead(self,proc,grouptbl) then
             __stream[self].mutex:lock()
             local nerr,s = pcall(function()
                 __stream[self]:seek(at)
-                local s = __stream[self]:read(amount)
+                local s
+                if amount == -1 then
+                    s = __stream[self]:readAll()
+                else
+                    s = __stream[self]:read(amount)
+                end
                 __stream[self]:close()
                 return s
             end)

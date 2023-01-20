@@ -43,6 +43,12 @@ local function newIsolatedProcessTable()
 			return t[i]
 		end
 	})
+	local function rawIsIn(tbl,v)
+		for k,vv in pairs(tbl) do
+			if rawequal(v,vv) then return k end
+		end
+		return nil
+	end
 	local processmt = {}
 	processmt.__index = processmt
 	function processmt:sendSignal(sig)
@@ -177,7 +183,11 @@ local function newIsolatedProcessTable()
 	function processmt:attachThr(thr)
 		--current thread must be trusted!
 		if rawequal(processesthr[coroutine.running()],self) then
-			processesthr[thr] = self
+			if processesthr[thr] != nil then
+				error("thread already bound!")
+			else
+				processesthr[thr] = self
+			end
 		else
 			error("access denied")
 		end
@@ -189,12 +199,8 @@ local function newIsolatedProcessTable()
 		end
 		return self.pubenv[var]
 	end
-	local function rawIsIn(tbl,v)
-		for k,vv in pairs(tbl) do
-			if rawequal(v,vv) then return k end
-		end
-		return nil
-	end
+	
+	local publicKernelAPI
 	local function newProcess(name,func,stdin,stdout,stderr,sigh,__kill,parent,user)
 		stdin = stdin or parent.stdin or newStream()
 		stdout = stdout or parent.stdout or newStream()
@@ -219,6 +225,7 @@ local function newIsolatedProcessTable()
 			proctbl = processes,
 			argv = {name},
 			user = user,
+			kernelAPI = publicKernelAPI,
 			__kill = __kill
 		},processmt)
 		processesthr[process.thr] = process
@@ -237,6 +244,9 @@ local function newIsolatedProcessTable()
 		end,
 		getCurrentProc=function()
 			return processesthr[coroutine.running()]
+		end,
+		setKernelAPI=function(newapi)
+			publicKernelAPI = newapi
 		end
 	}
 end
