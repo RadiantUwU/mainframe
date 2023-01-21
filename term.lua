@@ -250,6 +250,14 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		newStreamFile(process.stdin,"stdin",prc,pru,rw)
 		newStreamFile(process.stdout,"stdout",prc,pru,rw)
 		newStreamFile(process.stderr,"stderr",prc,pru,rw)
+		newStreamFile(newStdOut(function(str)
+			if str == "s" and process.state == "I" then
+				process:start()
+			elseif str == "d" and process.state = "I" then
+				process.state = "Z"
+				process.retcode = -1
+			end
+		end),"start",prc,pru,"-w--w----")
 		newFile(pru,"user",prc,pru,ro)
 		newStreamFile(newStreamGen(function(op,arg)
 			if op == "w" then
@@ -329,6 +337,18 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		local proc = getCurrentProc()
 		return propagateStream(proc.stderr,op,arg)
 	end,"stderr",devdir,nil,"rw-rw-rw-")
+	newStreamFile(streamnull,"null",devdir,nil,"rw-rw-rw-")
+	newStreamFile(function(op,arg)
+		if op == "r" then
+			if arg == -1 then
+				return "0"
+			else
+				return string.rep("0",arg)
+			end
+		elseif op == "l" then
+			return 268435455
+		end
+	end,"zero",devdir,nil,"rw-rw-rw-")
 	local stdin = newStreamGen(stdinf)
 	local stdout = newStreamGen(stdoutf)
 	local stderr = newStreamGen(stderrf)
@@ -336,7 +356,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	local function findGroupsOfUser(group,user)
 		local gs = {}
 		for gn,g in pairs(pr.grouptbl) then
-			if rawisIn(g,user) then
+			if rawIsIn(g,user) then
 				table.insert(gs,gn)
 			end
 		end
@@ -655,6 +675,256 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	end
 	local function newcat() return catinit,{} end
 	newExecutable(newcat,"cat",bindir,"root","rwxrwxr-x")
+	local function echoinit(proc) 
+		local arguments = {}
+		local sizemultipliers={
+			b=1,
+			k=1000,
+			m=1000000,
+			g=1000000000,
+			t=1000000000000,
+			p=1000000000000000,
+			B=512,
+			K=1024,
+			M=1048576,
+			G=1073741824,
+			T=1099511627776,
+			P=1125899906842624
+		}
+		local sizelimit = sizemultipliers.M * 10
+		local size = sizelimit
+		local blocksize = sizemultipliers.B -- one block, 512 bytes
+		local actualargs = {
+			["-wp"]=0,  -- waits for all processes to terminate, auto on for the processes spawned
+			["-b"]=1,   -- block size
+			["-s"]=1,   -- size
+			["-is"]=1,  -- input seek
+			["-os"]=1   -- output seek
+		}
+		for i,v in ipairs(proc.argv) do
+			if i ~= 1 then
+				arguments[i - 1] = v
+			end
+		end
+		local stream = newStream()
+		local types = {v="variable",f="file",p="process",s="seek",n="none",sa="seekawait"}
+		local states = {none="none",iargs="iargs",oargs="oargs",inp="inp",out="out",app="app",inputprocess="ip",outputprocess="op",parsingarg="pa"}
+		local statesallowed= {none="none",iargs="iargs",oargs="oargs"}
+		local inputseek = 1
+		local argparse = ""
+		local special = {
+			["<"]="inp",[">"]="out",[">>"]=app
+			["-if"]="inp",["-of"]="out"}
+		local state = states.none
+		local stdins = {}
+		local _stdins = {}
+		local stdouts = {}
+		local stdapps = {}
+		local function isnumber(n)
+			return pcall(tonumber,n)
+		end
+		proc.privenv.waitforproc={}
+		for _,v in ipairs(arguments) do
+			local k = rawIsIn(special,v)
+			if k then
+				if rawIsIn(statesallowed,state) then
+					if state == statesallowed.iargs then
+						table.insert(stdins,0)
+					elseif state == statesallowed.oargs then
+						table.insert(stdouts,0)
+					end
+					state = states[k]
+				else
+					proc.stderr:write("parsing error\n")
+					proc:ret(1)
+					return
+				end
+			else
+				if state == states.none then
+					if v == "-wp" then
+						proc.privenv.waitforproc = true
+					elseif rawIsIn(actualargs,v) then
+						argparse = v
+						state = states.parsingarg
+					elseif v:sub(1,1) == "$" then
+						stream:write(proc.parent:getEnv(v:sub(2,-1)))
+					else
+						stream:write(v)
+					end
+				elseif state == states.inp then
+					if v == "-p" then
+						state = states.inputprocess
+					elseif v:sub(1,1) == "$" then
+						stream:write(proc.parent:getEnv(v:sub(2,-1)))
+						state = states.none
+					else
+						table.insert(stdins,types.f)
+						table.insert(stdins,v)
+						state = states.none
+					end
+				elseif state == states.out then
+					if v == "-p" then
+						state = states.outputprocess
+					elseif v:sub(1,1) == "$" then
+						table.insert(stdouts,types.v)
+						table.insert(stdouts,v)
+						state = states.none
+					else
+						table.insert(stdouts,types.f)
+						table.insert(stdouts,v)
+						state = states.none
+					end
+				elseif state == states.app then
+					if v == "-p" then
+						state = states.outputprocess
+					elseif v:sub(1,1) == "$" then
+						table.insert(stdapps,types.v)
+						table.insert(stdapps,v)
+						state = states.none
+					else
+						table.insert(stdapps,types.f)
+						table.insert(stdapps,v)
+						state = states.none
+					end
+				elseif state == states.inputprocess then
+					table.insert(stdins,types.p)
+					table.insert(stdins,v)
+					state = states.iargs
+				elseif state == states.outputprocess then
+					table.insert(stdouts,types.p)
+					table.insert(stdouts,v)
+					state = states.oargs
+				elseif state == states.iargs then
+					table.insert(stdins,v)
+				elseif state == states.oargs then
+					table.insert(stdouts,v)
+				elseif state == states.parsingarg then
+					if argparse == "-b" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+							return
+						end
+						blocksize = i
+						if i > sizelimit then
+							proc.stderr:write("exceeds sizelimit\n")
+							proc:ret(1)
+							return
+						end
+					elseif argparse == "-s" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+						end
+						size = i
+						if i > sizelimit then
+							proc.stderr:write("exceeds sizelimit\n")
+							proc:ret(1)
+							return
+						end
+					elseif argparse == "-is" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+						end
+						inputseek = i + 1
+					elseif argparse = "-os" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+						end
+						table.insert(stdouts,types.s)
+						table.insert(stdouts,i + 1)
+					end
+				end
+			end
+		end
+		local file,nerr
+		local state = types.n
+		for _,i in ipairs(stdins) do
+			local cango = true
+			if state == types.sa then
+				state = types.n
+				if i ~= types.s then
+					table.insert(_stdins,{type="file",object=file,seek=1})
+				else
+					state = types.s
+					cango = false
+				end
+			end
+			if not cango then
+			elseif state == types.n then state = i
+			elseif state == types.f then
+				--get file
+				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				if not nerr then
+					stderr:write(file .. "\n")
+					proc:ret(1)
+					return
+				end
+				if file:isADirectory() then
+					stderr:write("not a file\n")
+					proc:ret(1)
+					return
+				end
+				if not file:canRead() then
+					stderr:write("access denied\n")
+					proc:ret(1)
+					return
+				end
+				state = types.sa
+			elseif state == types.s then
+				table.insert(_stdins,{type="file",object=file,seek=i})
+				state = types.n
+			elseif state == types.p then
+				if isnumber(i) then
+					stderr:write("PID as stdin not implemented yet.\n")
+					proc:ret(1)
+					return
+				else
+					nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+					if not nerr then
+						stderr:write(file.."\n")
+						proc:ret(1)
+						return
+					end
+					local process
+					nerr,process = pcall(file.execute,file,)
+				
+		end
+	end
+	local function newecho() return echoinit,{} end
+	newExecutable(newecho,"echo",bindir,"root","rwxrwxr-x")
+	newExecutable(newecho,"pipe",bindir,"root","rwxrwxr-x")
+	newExecutable(newecho,"dd",bindir,"root","rwxrwxr-x")
 	local initfile = newExecutable(newInit,"init",sbindir,"root","rwxrw----")
 	local ip = initfile:execute()
 	ip.pid = 1
@@ -727,6 +997,21 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	local publicKernelAPI = {
 		rootfs = rootdir,
 		getRunningUser = getRunningUser,
+		getFileRelativeFromProc = function(file) --nerr, file/msg
+			return pcall(function()
+				local proc = processesthr[coroutine.running()]
+				if not proc then error("function can't be used in an anonymous thread") end
+				local workingDir = proc:getEnv("workingDir")
+				local newfile
+				if workingDir == nil then
+					newfile = rootdir:to(file,true)
+				else 
+					newfile = workingDir:to(file)
+				end
+				if newfile == nil then error("file not found") end
+				return newfile
+			end)
+		end,
 		isThreadRooted = function()
 			local user = getRunningUser()
 			if user == nil then return false end
@@ -751,7 +1036,15 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			if ownsGroup(group,cu) then
 				privatekernelAPI.removeUserInGroup(group,user)
 			end
-		end
+		end,
+		ownsGroup = ownsGroup,
+		newStream=newStream,
+		newStreamGen=newStreamGen,
+		newStdIn=newStdIn,
+		newStdOut=newStdOut,
+		newNullStream=newNullStream,
+		findGroupsOfUser=findGroupsOfUser
 	}
+	table.freeze(publicKernelAPI)
 	return ip,privatekernelAPI,publicKernelAPI
 end

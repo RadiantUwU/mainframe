@@ -129,6 +129,7 @@ local function newIsolatedProcessTable()
 		end
 	end
 	function processmt:ret(retcode)
+		assert(processesthr[coroutine.running()] == self,"cannot forcibly return process from anonymous thread")
 		self.state = "Z"
 		self.stdin = newStream()
 		self.stdout = newStream()

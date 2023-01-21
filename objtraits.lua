@@ -47,13 +47,18 @@ end
 function objtraits:to(path,absoluteassert)
     path = path or "/"
     local isabsolute = path:sub(1,1) == "/"
-    if absoluteassert then assert(isabsoulte,"pathname must be absolute") end
+    if absoluteassert then assert(isabsolute,"pathname must be absolute") end
     local dir = self
     if isabsolute then
         while dir.parent ~= nil then
             dir = dir.parent
         end
         path = path:sub(2,-1)
+    end
+    if #path > 1 then
+        if path:sub(-2,-1) == "/" then
+            path = path:sub(1,-2)
+        end
     end
     if path == "" then
         return dir

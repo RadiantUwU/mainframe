@@ -142,7 +142,7 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     function execmt:isADirectory()
         return false
     end
-    function execmt:read()
+    function execmt:read(at,amount)
         local proc = getCurrentProc()
         if objtraits.canRead(self,proc,grouptbl) then
             return __exec[self]
@@ -158,14 +158,14 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
         end
         error("permission error")
     end
-    function execmt:execute(args)
+    function execmt:execute(args,rawargs)
         local proc = getCurrentProc()
         args = args or {}
         if objtraits.canExecute(self,proc,grouptbl) then
             local start,sigh,__kill = __exobj[__exec[self]]()
             local args = table_clone(args)
             local nn = self:getFullPath()
-            table.insert(args,1,nn)
+            if not rawargs then table.insert(args,1,nn) end
             local np = newProcess(nn,start,proc.stdin,proc.stdout,proc.stderr,sigh,__kill,proc,proc.user)
             np.argv = args
             return np
