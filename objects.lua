@@ -246,11 +246,11 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     end
     function filemt:read(at,amount)
         local proc = getCurrentProc()
-        at = at or 1
-        amount = amount or -1
         if objtraits.canRead(self,proc,grouptbl) then
             if (at == nil) and (amount == nil) then return __file[self]
             else
+                at = at or 0
+                at = at + 1
                 if amount == -1 then
                     return __file[self]:sub(at,-1)
                 else

@@ -707,18 +707,22 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			end
 		end
 		local stream = newStream()
-		local types = {v="variable",f="file",p="process",s="seek",n="none",sa="seekawait"}
+		local types = {v="variable",f="file",p="process",s="seek",n="none",sa="seekawait",pa}
 		local states = {none="none",iargs="iargs",oargs="oargs",inp="inp",out="out",app="app",inputprocess="ip",outputprocess="op",parsingarg="pa"}
 		local statesallowed= {none="none",iargs="iargs",oargs="oargs"}
 		local inputseek = 1
 		local argparse = ""
 		local special = {
-			["<"]="inp",[">"]="out",[">>"]=app
+			["<"]="inp",[">"]="out",[">>"]="app",
 			["-if"]="inp",["-of"]="out"}
 		local state = states.none
+		local buffer = {}
 		local stdins = {}
 		local _stdins = {}
+		local _stdouts = {}
+		local _stdapps = {}
 		local stdouts = {}
+		local stdoutstreams = {}
 		local stdapps = {}
 		local function isnumber(n)
 			return pcall(tonumber,n)
@@ -767,7 +771,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						state = states.outputprocess
 					elseif v:sub(1,1) == "$" then
 						table.insert(stdouts,types.v)
-						table.insert(stdouts,v)
+						table.insert(stdouts,v:sub(2,-1))
 						state = states.none
 					else
 						table.insert(stdouts,types.f)
@@ -779,7 +783,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						state = states.outputprocess
 					elseif v:sub(1,1) == "$" then
 						table.insert(stdapps,types.v)
-						table.insert(stdapps,v)
+						table.insert(stdapps,v:sub(2,-1))
 						state = states.none
 					else
 						table.insert(stdapps,types.f)
@@ -905,20 +909,176 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				table.insert(_stdins,{type="file",object=file,seek=i})
 				state = types.n
 			elseif state == types.p then
-				if isnumber(i) then
-					stderr:write("PID as stdin not implemented yet.\n")
-					proc:ret(1)
-					return
-				else
-					nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				if type(i) == "number" then
+					--terminator, start process
+					nerr,file = proc.kernelAPI.getFileRelativeFromProc(buffer[1])
 					if not nerr then
 						stderr:write(file.."\n")
 						proc:ret(1)
 						return
 					end
 					local process
-					nerr,process = pcall(file.execute,file,)
-				
+					table.remove(buffer,1)
+					nerr,process = pcall(file.execute,file,buffer)
+					if not nerr then
+						stderr:write(process.."\n")
+						proc:ret(1)
+						return
+					end
+					process.stdout = stream
+					process:start()
+					buffer = {}
+				else
+					table.insert(buffer,i)
+				end
+			end
+		end
+		for _,i in ipairs(stdouts) do
+			local cango = true
+			if state == types.sa then
+				state = types.n
+				if i ~= types.s then
+					table.insert(_stdouts,{type="file",object=file,seek=1})
+				else
+					state = types.s
+					cango = false
+				end
+			end
+			if not cango then
+			elseif state == types.n then 
+				if v == states.s then	
+					stderr:write("parsing error\n")
+					proc:ret(1)
+					return
+				end
+				state = i
+			elseif state == types.f then
+				--get file
+				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				if not nerr then
+					stderr:write(file .. "\n")
+					proc:ret(1)
+					return
+				end
+				if file:isADirectory() then
+					stderr:write("not a file\n")
+					proc:ret(1)
+					return
+				end
+				if not file:canWrite() then
+					stderr:write("access denied\n")
+					proc:ret(1)
+					return
+				end
+				state = types.sa
+			elseif state == types.s then
+				table.insert(_stdouts,{type="file",object=file,seek=i})
+				state = types.n
+			elseif state == types.p then
+				if type(i) == "number" then
+					--terminator, start process
+					nerr,file = proc.kernelAPI.getFileRelativeFromProc(buffer[1])
+					if not nerr then
+						stderr:write(file.."\n")
+						proc:ret(1)
+						return
+					end
+					local process
+					table.remove(buffer,1)
+					nerr,process = pcall(file.execute,file,buffer)
+					if not nerr then
+						stderr:write(process.."\n")
+						proc:ret(1)
+						return
+					end
+					local newstreams = newStream()
+					process.stdin = newstreams
+					table.insert(stdoutstreams,newstreams)
+					process:start()
+					buffer = {}
+				else
+					table.insert(buffer,i)
+				end
+			elseif state == types.v then
+
+			end
+		end
+		for _,i in ipairs(stdapps) do
+			local cango = true
+			if state == types.sa then
+				state = types.n
+				if i ~= types.s then
+					table.insert(_stdapps,{type="file",object=file,seek=1})
+				else
+					state = types.s
+					cango = false
+				end
+			end
+			if not cango then
+			elseif state == types.n then state = i
+			elseif state == types.f then
+				--get file
+				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				if not nerr then
+					stderr:write(file .. "\n")
+					proc:ret(1)
+					return
+				end
+				if file:isADirectory() then
+					stderr:write("not a file\n")
+					proc:ret(1)
+					return
+				end
+				if not file:canWrite() then
+					stderr:write("access denied\n")
+					proc:ret(1)
+					return
+				end
+				state = types.sa
+			elseif state == types.s then
+				table.insert(_stdapps,{type="file",object=file,seek=i})
+				state = types.n
+			elseif state == types.p then
+				if type(i) == "number" then
+					--terminator, start process
+					nerr,file = proc.kernelAPI.getFileRelativeFromProc(buffer[1])
+					if not nerr then
+						stderr:write(file.."\n")
+						proc:ret(1)
+						return
+					end
+					local process
+					table.remove(buffer,1)
+					nerr,process = pcall(file.execute,file,buffer)
+					if not nerr then
+						stderr:write(process.."\n")
+						proc:ret(1)
+						return
+					end
+					local newstreams = newStream()
+					process.stdin = newstreams
+					table.insert(stdoutstreams,newstreams)
+					process:start()
+					buffer = {}
+				else
+					table.insert(buffer,i)
+				end
+			end
+		endlocal function initall()
+			local s = stream:readAll()
+			for _,o in ipairs(_stdouts) do
+				o:write(s)
+			end
+			for _,o in ipairs(stdapps)
+		end
+		local function pushall()
+			local s = stream:readAll()
+			for _,o in ipairs(_stdouts) do
+				o:append(s)
+			end
+		end
+		while true do 
+			
 		end
 	end
 	local function newecho() return echoinit,{} end
