@@ -206,13 +206,16 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			if rawequal(bb,v) then return k end
 		end
 	end
+	local function log(module,msg)
+		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] ["..module.."] "..msg)
+	end
 	--create proc table
 	local pr = newIsolatedProcessTable()
 	local krnlprocplaceholder = {
 		user="root"
 	}
 	--create filesystem
-	stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [scsi] starting disk")
+	log("scsi","starting disk")
 	local rootdir,du = newIsolatedRootfs(pr.grouptbl,pr.newProcess,pr.getCurrentProc)
 	--load macros
 	local 
@@ -221,7 +224,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	local processtable = pr.processtable
 	processesthr[coroutine.running()] = krnlprocplaceholder
 	task.wait(0.3)
-	stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] mounting /dev/sda1")
+	log("sda","mounting /dev/sda1")
 	local devdir = newDirectory("dev",rootdir,nil,"rwarwar-a")
 	local bindir = newDirectory("bin",rootdir,nil,"rwarwar-a")
 	local sbindir = newDirectory("sbin",rootdir,nil,"rwarwa---")
@@ -352,7 +355,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	local stdin = newStreamGen(stdinf)
 	local stdout = newStreamGen(stdoutf)
 	local stderr = newStreamGen(stderrf)
-	stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] loading init")
+	log("kernel","loading init")
 	local function findGroupsOfUser(group,user)
 		local gs = {}
 		for gn,g in pairs(pr.grouptbl) then
@@ -374,11 +377,11 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				processtable[1]:kill()
 			end)()
 		end
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
+		log("fs","unmounting /dev/sda1")
 		task.wait(0.4)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [scsi] stopping disk")
+		log("scsi","stopping disk")
 		task.wait(1)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] shutting down")
+		log("kernel","shutting down")
 		task.wait(1)
 		for _,f in ipairs(powerdownhooks) do
 			coroutine.wrap(f)("poweroff")
@@ -393,11 +396,11 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				processtable[1]:kill()
 			end)()
 		end
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
+		log("fs","unmounting /dev/sda1")
 		task.wait(0.4)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [scsi] stopping disk")
+		log("scsi","stopping disk")
 		task.wait(1)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] system halted")
+		log("kernel","system halted")
 		for _,f in ipairs(powerdownhooks) do
 			coroutine.wrap(f)("halt")
 		end
@@ -411,9 +414,11 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				processtable[1]:kill()
 			end)()
 		end
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
+		log("fs","unmounting /dev/sda1")
 		task.wait(0.4)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] rebooting")
+		log("scsi","stopping disk")
+		task.wait(1)
+		log("kernel","rebooting")
 		task.wait(0.1)
 		for _,f in ipairs(powerdownhooks) do
 			coroutine.wrap(f)("reboot")
@@ -1198,7 +1203,9 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			end
 			return "Offline"
 		end,
-		resume=pr.resumeAll
+		resume=pr.resumeAll,
+		yield=pr.yield,
+		log=log
 	}
 	local publicKernelAPI = {
 		rootfs = rootdir,
