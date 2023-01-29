@@ -50,7 +50,7 @@ function objtraits:to(path,absoluteassert)
     if absoluteassert then assert(isabsolute,"pathname must be absolute") end
     local dir = self
     if isabsolute then
-        while dir.parent ~= nil then
+        while dir.parent ~= nil do
             dir = dir.parent
         end
         path = path:sub(2,-1)

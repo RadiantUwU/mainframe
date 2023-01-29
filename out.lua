@@ -6062,7 +6062,7 @@ function objtraits:to(path,absoluteassert)
     if absoluteassert then assert(isabsolute,"pathname must be absolute") end
     local dir = self
     if isabsolute then
-        while dir.parent ~= nil then
+        while dir.parent ~= nil do
             dir = dir.parent
         end
         path = path:sub(2,-1)
@@ -6268,7 +6268,7 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     function dirmt:subwrite(name,obj)
         local proc = getCurrentProc()
         if objtraits.canWrite(self,proc,grouptbl) then
-            if __dir[self][name] != nil then
+            if __dir[self][name] ~= nil then
                 __dir[self][name].parent = nil
             end
             __dir[self][name] = obj
@@ -6991,7 +6991,7 @@ local function newIsolatedProcessTable()
 	function processmt:attachThr(thr)
 		--current thread must be trusted!
 		if rawequal(processesthr[coroutine.running()],self) then
-			if processesthr[thr] != nil then
+			if processesthr[thr] ~= nil then
 				error("thread already bound!")
 			else
 				processesthr[thr] = self
@@ -7155,7 +7155,8 @@ local function newTerm(devname,user,prompt,stdinf,stdoutf,stderrf,termname,pr,ro
 		local c,bindirtry = pcall(rootdir.subread)(rootdir,"bin")
 		if not c then
 			stderr:write("cannot open bin dir\n")
-			self:ret(1)
+			proc:ret(1)
+			return
 		else
 			bindir = bindirtry
 			next(proc)
@@ -7328,7 +7329,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		newStreamFile(newStdOut(function(str)
 			if str == "s" and process.state == "I" then
 				process:start()
-			elseif str == "d" and process.state = "I" then
+			elseif str == "d" and process.state == "I" then
 				process.state = "Z"
 				process.retcode = -1
 			end
@@ -7361,7 +7362,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						coroutine.wrap(function()
 							pr.processesthr[coroutine.running()] = krnlprocplaceholder
 							proc:terminate()
-						)()
+						end)()
 					end
 				elseif c == "i" then
 					for id,proc in pairs(processtable) do
@@ -7369,7 +7370,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						coroutine.wrap(function()
 							pr.processesthr[coroutine.running()] = krnlprocplaceholder
 							proc:kill()
-						)()
+						end)()
 					end
 				end
 			end
@@ -7430,7 +7431,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	log("kernel","loading init")
 	local function findGroupsOfUser(group,user)
 		local gs = {}
-		for gn,g in pairs(pr.grouptbl) then
+		for gn,g in pairs(pr.grouptbl) do
 			if rawIsIn(g,user) then
 				table.insert(gs,gn)
 			end
@@ -7565,7 +7566,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		while true do
 			local c = nil
 			while c ~= "" do
-				c = stdin:read(1
+				c = stdin:read(1)
 				if c == "\n" then
 					if proc.privenv.code == code then
 						syspoweroff()
@@ -7595,21 +7596,26 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					if res:isADirectory() then
 						proc.parent.pubenv.workingDir = res
 						proc:ret(0)
+						return
 					else
 						stderr:write("Not a directory.\n")
 						proc:ret(2)
+						return
 					end
 				else
 					stderr:write("Link not found.\n")
 					proc:ret(3)
+					return
 				end
 			else
 				stderr:write("An error occurred while changing directory: "..res.."\n")
 				proc:ret(4)
+				return
 			end
 		else
 			stderr:write("Parent process does not support cd.")
 			proc:ret(1)
+			return
 		end
 	end
 	local function newCd() return cdinit,{} end
@@ -7709,6 +7715,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		end
 		proc.stdout:write(proc.user .. "@" .. hostname)
 		proc:ret(0)
+		return
 	end
 	local function newwhoami() return whoamiinit,{} end
 	newExecutable(newwhoami,"whoami",bindir,"root","rwxrwxr-x")
@@ -7720,7 +7727,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			return
 		end
 		local file,nerr
-		if proc.pubenv.workingDir != nil then
+		if proc.pubenv.workingDir ~= nil then
 			nerr,file = pcall(function()
 				return proc.pubenv.workingDir:to(filetoreadpath)
 			end)
@@ -7749,6 +7756,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		end
 		proc.stdout:write(file)
 		proc:ret(0)
+		return
 	end
 	local function newcat() return catinit,{} end
 	newExecutable(newcat,"cat",bindir,"root","rwxrwxr-x")
@@ -7785,7 +7793,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			end
 		end
 		local stream = newStream()
-		local types = {v="variable",f="file",p="process",s="seek",n="none",sa="seekawait",pa}
+		local types = {v="variable",f="file",p="process",s="seek",n="none",sa="seekawait"}
 		local states = {none="none",iargs="iargs",oargs="oargs",inp="inp",out="out",app="app",inputprocess="ip",outputprocess="op",parsingarg="pa"}
 		local statesallowed= {none="none",iargs="iargs",oargs="oargs"}
 		local inputseek = 1
@@ -7911,6 +7919,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						if not nerr then
 							proc.stderr:write("parsing error\n")
 							proc:ret(1)
+							return
 						end
 						size = i
 						if i > sizelimit then
@@ -7929,9 +7938,10 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						if not nerr then
 							proc.stderr:write("parsing error\n")
 							proc:ret(1)
+							return
 						end
 						inputseek = i + 1
-					elseif argparse = "-os" then
+					elseif argparse == "-os" then
 						local numtoparse = v
 						local mult = 1
 						if sizemultipliers[v:sub(-2,-1)] then
@@ -7942,6 +7952,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 						if not nerr then
 							proc.stderr:write("parsing error\n")
 							proc:ret(1)
+							return
 						end
 						table.insert(stdouts,types.s)
 						table.insert(stdouts,i + 1)
@@ -8024,7 +8035,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			end
 			if not cango then
 			elseif state == types.n then 
-				if v == states.s then	
+				if i == states.s then	
 					stderr:write("parsing error\n")
 					proc:ret(1)
 					return
@@ -8078,7 +8089,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					table.insert(buffer,i)
 				end
 			elseif state == types.v then
-				local varname = v
+				local varname = i
 				proc.parent.pubenv[varname] = ""
 				local function appendtovar(str)
 					local var = proc.parent:getEnv(varname)
@@ -8148,7 +8159,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					table.insert(buffer,i)
 				end
 			elseif state == types.v then
-				local varname = v
+				local varname = i
 				assert(type(proc.parent.pubenv[varname]) == "string","var must be a string")
 				local function appendtovar(str)
 					local var = proc.parent:getEnv(varname)
@@ -8278,11 +8289,11 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		stderr=stderr,
 		setEPOCode=function(codetoset)
 			code = codetoset
-		end
+		end,
 		reProcAnyRoot=function(procholder)
 			procholder = procholder or ip -- init process
 			pr.processesthr[coroutine.running()]=procholder
-		end
+		end,
 		powerdownhook=function(f)
 			--function (action) -> ?
 			table.insert(powerdownhooks,f)
@@ -8304,7 +8315,6 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		pr = pr,
 		grouptable = pr.grouptbl,
 		ProcessThreads = pr.processesthr,
-		isInGroup=pr.isInGroup,
 		getCurrentProc=pr.getCurrentProc,
 		du=du,
 		rootDirectory = rootdir,
@@ -8356,14 +8366,14 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		end,
 		addUserToGroup=function(group,user)
 			local cu = getRunningUser()
-			if user == nil then error("access denied")
+			if user == nil then error("access denied") end
 			if ownsGroup(group,cu) then
 				privatekernelAPI.addUserInGroup(group,user)
 			end
 		end,
 		removeUserFromGroup=function(group,user)
 			local cu = getRunningUser()
-			if user == nil then error("access denied")
+			if user == nil then error("access denied") end
 			if ownsGroup(group,cu) then
 				privatekernelAPI.removeUserInGroup(group,user)
 			end

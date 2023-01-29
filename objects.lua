@@ -43,7 +43,7 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     function dirmt:subwrite(name,obj)
         local proc = getCurrentProc()
         if objtraits.canWrite(self,proc,grouptbl) then
-            if __dir[self][name] != nil then
+            if __dir[self][name] ~= nil then
                 __dir[self][name].parent = nil
             end
             __dir[self][name] = obj

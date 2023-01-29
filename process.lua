@@ -185,7 +185,7 @@ local function newIsolatedProcessTable()
 	function processmt:attachThr(thr)
 		--current thread must be trusted!
 		if rawequal(processesthr[coroutine.running()],self) then
-			if processesthr[thr] != nil then
+			if processesthr[thr] ~= nil then
 				error("thread already bound!")
 			else
 				processesthr[thr] = self
