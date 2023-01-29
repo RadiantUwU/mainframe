@@ -23,7 +23,7 @@ local function newTerm(devname,user,prompt,stdinf,stdoutf,stderrf,termname,pr,ro
 	local jobs = {}
 	local isnext = false
 	--DC1 - color nbgcrmywNBGCRMYW
-	--DC2 - bB - blinking, fF - setting foreground color or background, eE - echo, 12 - stdout,stderr
+	--DC2 - bB - blinking, fF - setting foreground color or background, f is foreground ,eE - echo, 12 - stdout,stderr, c - clear, r - reset all, u - update/flush
 	local waitingon = nil
 	local function next(proc)
 		local prompt = proc:getEnv("PS1")
