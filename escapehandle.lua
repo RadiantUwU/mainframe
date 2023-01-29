@@ -137,4 +137,8 @@ return function (terminal,poweroffhookadd,stdinf)
             end
         end
     end)
+    poweroffhookadd(function(_)
+        hook:Disconnect()
+    end)
+    return stdinff,stdoutf,stderrf
 end
