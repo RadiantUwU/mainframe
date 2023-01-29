@@ -1315,6 +1315,8 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		findGroupsOfUser=findGroupsOfUser,
 		yield=pr.yield
 	}
+	pr.setKernelAPI(publicKernelAPI)
+	ip.kernelAPI = publicKernelAPI
 	table.freeze(publicKernelAPI)
 	return ip,privatekernelAPI,publicKernelAPI
 end
