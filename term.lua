@@ -479,34 +479,34 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if not code then
 			stderr:write("access denied.\n")
 			proc:ret(19) -- access denied
+			return
 		else
 			proc.stdout:write("Code:")
 			proc.privenv.code = ""
 		end
-	end
-	local function newEpo()
-		return epoinit,{
-			[signals.SIGALRM]=function(proc)
-				if proc.privenv.code then
-					local c = nil
-					while c ~= "" do
-						c = stdin:read(1
-						if c == "\n" then
-							if proc.privenv.code == code then
-								syspoweroff()
-								return
-							else
-								stderr:write("Invalid code.\n")
-								proc:ret(19)
-								return
-							end
-						else
-							proc.privenv.code = proc.privenv.code .. c
-						end
+		proc.kernelAPI.yield()
+		while true do
+			local c = nil
+			while c ~= "" do
+				c = stdin:read(1
+				if c == "\n" then
+					if proc.privenv.code == code then
+						syspoweroff()
+						return
+					else
+						stderr:write("Invalid code.\n")
+						proc:ret(19)
+						return
 					end
+				else
+					proc.privenv.code = proc.privenv.code .. c
 				end
 			end
-		}
+			proc.kernelAPI.yield()
+		end
+	end
+	local function newEpo()
+		return epoinit,{}
 	end
 	newExecutable(newEpo,"epo",bindir,"root","rwxrwxr-x")
 	local function cdinit(proc)
@@ -694,6 +694,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		local sizelimit = sizemultipliers.M * 10
 		local size = sizelimit
 		local blocksize = sizemultipliers.B -- one block, 512 bytes
+		local globalseek = 0
 		local actualargs = {
 			["-wp"]=0,  -- waits for all processes to terminate, auto on for the processes spawned
 			["-b"]=1,   -- block size
@@ -1000,7 +1001,13 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					table.insert(buffer,i)
 				end
 			elseif state == types.v then
-
+				local varname = v
+				proc.parent.pubenv[varname] = ""
+				local function appendtovar(str)
+					local var = proc.parent:getEnv(varname)
+					proc.parent.pubenv[varname] = var .. str
+				end
+				table.insert(stdoutstreams,newStdOut(appendtovar))
 			end
 		end
 		for _,i in ipairs(stdapps) do
@@ -1063,22 +1070,60 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				else
 					table.insert(buffer,i)
 				end
+			elseif state == types.v then
+				local varname = v
+				assert(type(proc.parent.pubenv[varname]) == "string","var must be a string")
+				local function appendtovar(str)
+					local var = proc.parent:getEnv(varname)
+					proc.parent.pubenv[varname] = var .. str
+				end
+				table.insert(stdoutstreams,newStdOut(appendtovar))
 			end
-		endlocal function initall()
+		end
+		local function initall()
 			local s = stream:readAll()
 			for _,o in ipairs(_stdouts) do
 				o:write(s)
 			end
-			for _,o in ipairs(stdapps)
+			for _,o in ipairs(_stdapps) do
+				o:append(s)
+			end
+			for _,o in ipairs(stdoutstreams) do
+				o:write(s)
+			end
 		end
 		local function pushall()
 			local s = stream:readAll()
 			for _,o in ipairs(_stdouts) do
 				o:append(s)
 			end
+			for _,o in ipairs(_stdapps) do
+				o:append(s)
+			end
+			for _,o in ipairs(stdoutstreams) do
+				o:write(s)
+			end
 		end
+		initall()
 		while true do 
-			
+			for _,fileentry in ipairs(_stdins) do
+				local fileobj = fileentry.object
+				local seekedat = globalseek + fileentry.seek
+				stream:write(fileobj:read(seekedat,blocksize))
+			end
+			globalseek = globalseek + blocksize
+			pushall()
+			--check for EOF
+			for _,fileentry in ipairs(_stdins) do
+				local fileobj = fileentry.object
+				local seekedat = globalseek + fileentry.seek
+				if fileobj:read(seekedat,1) == "" then
+					--reached EOF
+					proc:ret(0)
+					return
+				end
+			end
+			proc.kernelAPI.yield()
 		end
 	end
 	local function newecho() return echoinit,{} end
@@ -1152,7 +1197,8 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				return "Running"
 			end
 			return "Offline"
-		end
+		end,
+		resume=pr.resumeAll
 	}
 	local publicKernelAPI = {
 		rootfs = rootdir,
@@ -1203,7 +1249,8 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		newStdIn=newStdIn,
 		newStdOut=newStdOut,
 		newNullStream=newNullStream,
-		findGroupsOfUser=findGroupsOfUser
+		findGroupsOfUser=findGroupsOfUser,
+		yield=pr.yield
 	}
 	table.freeze(publicKernelAPI)
 	return ip,privatekernelAPI,publicKernelAPI

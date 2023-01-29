@@ -235,10 +235,22 @@ local function newIsolatedProcessTable()
 		processesthr[process.thr] = process
 		return process
 	end
+	local pausedthreads = {}
 	return {
 		processtable=processes,
 		newProcess=newProcess,
 		grouptbl=grouptbl,
+		yield=function()
+			table.insert(pausedthreads,coroutine.running())
+			coroutine.yield()
+		end,
+		resumeAll=function()
+			local thrs = pausedthreads
+			pausedthreads = {}
+			for _,thr in ipairs(thrs) do
+				coroutine.resume(thr)
+			end
+		end,
 		processesthr=processesthr,
 		isInGroup=function(groupname,username)
 			return rawIsIn(grouptbl[groupname],username)
