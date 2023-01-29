@@ -121,7 +121,7 @@ local function newIsolatedProcessTable()
 				elseif sig == signals.SIGCHLD then
 					for _,p in ipairs(self.children) do
 						if p.state == "Z" then
-							p:kill()
+							p:destroy()
 						end
 					end
 				end
@@ -173,6 +173,7 @@ local function newIsolatedProcessTable()
 			processes[self.pid] = nil
 			self.children = {}
 			self.proctbl = nil
+			table.remove(self.parent.children,rawIsIn(self.parent.children,self))
 		end
 	end
 	function processmt:start()

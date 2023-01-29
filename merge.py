@@ -1,4 +1,5 @@
 dirs = [
+    "loadstring.lua",
     "split.lua",
     "stream.lua",
     "mutex.lua",

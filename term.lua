@@ -1135,6 +1135,52 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	newExecutable(newecho,"echo",bindir,"root","rwxrwxr-x")
 	newExecutable(newecho,"pipe",bindir,"root","rwxrwxr-x")
 	newExecutable(newecho,"dd",bindir,"root","rwxrwxr-x")
+	local function sudoinit(proc)
+		if isInGroup("root",proc.user) or isInGroup("sudoers",proc.user) then
+			local args = {}
+			for i,v in ipairs(proc.argv) do
+				if i > 2 then
+					args[i - 2] = v
+				end
+			end
+			local user = proc.user
+			proc.user = "root"
+			local success,file = proc.kernelAPI.getFileRelativeFromProc(proc.argv[2])
+			if not success then
+				proc.stderr:write(file .. "\n")
+				proc:ret(1)
+				return
+			end
+			if not file:canExecute() then
+				proc.stderr:write("access denied.\n")
+				proc.user = user
+				proc:ret(1)
+				return
+			end
+			local process = file:execute(args)
+			process:start()
+			proc.user = user
+			while true do
+				if (#(proc.children)) == 0 then
+					proc:ret(0)
+					return
+				end
+				pr.yield()
+			end
+		else
+			proc.stderr:write("access denied.\n")
+			proc:ret(19)
+			return
+		end
+	end
+	local function newsudo() return sudoinit,{} end
+	newExecutable(newsudo,"sudo",bindir,"root","rwxrwxr-x")
+	local function luauinit(proc)
+		proc:ret(-1)
+		return
+	end
+	local function newluau() return luauinit,{} end
+	newExecutable(newluau,"luau",bindir,"root","rwxrwxr-x")
 	local initfile = newExecutable(newInit,"init",sbindir,"root","rwxrw----")
 	local ip = initfile:execute()
 	ip.pid = 1
