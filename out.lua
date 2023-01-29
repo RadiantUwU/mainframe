@@ -247,21 +247,33 @@ local function newStdOut(f)
 	s = setmetatable({__gen=stdoutgen,__buf=""},genstreamfuncs)
 	return s
 end
-local function propagateStream(stream,op,arg)
+local function streamnull(op,arg)
 	if op == "r" then
-		if arg == -1 then
-			return stream:readAll()
-		else
-			return stream:read(arg)
-		end
-	elseif op == "c" then
-		stream:close()
-	elseif op == "s" then
-		stream:seek(arg)
+		return ""
 	elseif op == "l" then
-		return stream:available()
-	elseif op == "w" then
-		stream:write(arg)
+		return 0
+	end
+end
+local function newNullStream()
+	return newStreamGen(streamnull)
+end
+local function propagateStream(stream)
+	return function(op,arg)
+		if op == "r" then
+			if arg == -1 then
+				return stream:readAll()
+			else
+				return stream:read(arg)
+			end
+		elseif op == "c" then
+			stream:close()
+		elseif op == "s" then
+			stream:seek(arg)
+		elseif op == "l" then
+			return stream:available()
+		elseif op == "w" then
+			stream:write(arg)
+		end
 	end
 end
 --stdout works for stderr too
@@ -373,13 +385,18 @@ end
 function objtraits:to(path,absoluteassert)
     path = path or "/"
     local isabsolute = path:sub(1,1) == "/"
-    if absoluteassert then assert(isabsoulte,"pathname must be absolute") end
+    if absoluteassert then assert(isabsolute,"pathname must be absolute") end
     local dir = self
     if isabsolute then
         while dir.parent ~= nil then
             dir = dir.parent
         end
         path = path:sub(2,-1)
+    end
+    if #path > 1 then
+        if path:sub(-2,-1) == "/" then
+            path = path:sub(1,-2)
+        end
     end
     if path == "" then
         return dir
@@ -577,7 +594,11 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     function dirmt:subwrite(name,obj)
         local proc = getCurrentProc()
         if objtraits.canWrite(self,proc,grouptbl) then
+            if __dir[self][name] != nil then
+                __dir[self][name].parent = nil
+            end
             __dir[self][name] = obj
+            obj.parent = self
             return
         end
         error("permission error")
@@ -672,7 +693,7 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
     function execmt:isADirectory()
         return false
     end
-    function execmt:read()
+    function execmt:read(at,amount)
         local proc = getCurrentProc()
         if objtraits.canRead(self,proc,grouptbl) then
             return __exec[self]
@@ -688,14 +709,14 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
         end
         error("permission error")
     end
-    function execmt:execute(args)
+    function execmt:execute(args,rawargs)
         local proc = getCurrentProc()
         args = args or {}
         if objtraits.canExecute(self,proc,grouptbl) then
             local start,sigh,__kill = __exobj[__exec[self]]()
             local args = table_clone(args)
             local nn = self:getFullPath()
-            table.insert(args,1,nn)
+            if not rawargs then table.insert(args,1,nn) end
             local np = newProcess(nn,start,proc.stdin,proc.stdout,proc.stderr,sigh,__kill,proc,proc.user)
             np.argv = args
             return np
@@ -779,7 +800,13 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
         if objtraits.canRead(self,proc,grouptbl) then
             if (at == nil) and (amount == nil) then return __file[self]
             else
-                return __file[self]:sub(at+1,at+1+amount)
+                at = at or 0
+                at = at + 1
+                if amount == -1 then
+                    return __file[self]:sub(at,-1)
+                else
+                    return __file[self]:sub(at,at+amount)
+                end
             end
         end
         error("permission error")
@@ -883,12 +910,19 @@ local function newIsolatedRootfs(grouptbl,newProcess,getCurrentProc)
         return false
     end
     function streamt:read(at,amount)
+        at = at or 1
+        amount = amount or -1
         local proc = getCurrentProc()
         if objtraits.canRead(self,proc,grouptbl) then
             __stream[self].mutex:lock()
             local nerr,s = pcall(function()
                 __stream[self]:seek(at)
-                local s = __stream[self]:read(amount)
+                local s
+                if amount == -1 then
+                    s = __stream[self]:readAll()
+                else
+                    s = __stream[self]:read(amount)
+                end
                 __stream[self]:close()
                 return s
             end)
@@ -1141,6 +1175,12 @@ local function newIsolatedProcessTable()
 			return t[i]
 		end
 	})
+	local function rawIsIn(tbl,v)
+		for k,vv in pairs(tbl) do
+			if rawequal(v,vv) then return k end
+		end
+		return nil
+	end
 	local processmt = {}
 	processmt.__index = processmt
 	function processmt:sendSignal(sig)
@@ -1221,6 +1261,7 @@ local function newIsolatedProcessTable()
 		end
 	end
 	function processmt:ret(retcode)
+		assert(processesthr[coroutine.running()] == self,"cannot forcibly return process from anonymous thread")
 		self.state = "Z"
 		self.stdin = newStream()
 		self.stdout = newStream()
@@ -1275,7 +1316,11 @@ local function newIsolatedProcessTable()
 	function processmt:attachThr(thr)
 		--current thread must be trusted!
 		if rawequal(processesthr[coroutine.running()],self) then
-			processesthr[thr] = self
+			if processesthr[thr] != nil then
+				error("thread already bound!")
+			else
+				processesthr[thr] = self
+			end
 		else
 			error("access denied")
 		end
@@ -1287,12 +1332,8 @@ local function newIsolatedProcessTable()
 		end
 		return self.pubenv[var]
 	end
-	local function rawIsIn(tbl,v)
-		for k,vv in pairs(tbl) do
-			if rawequal(v,vv) then return k end
-		end
-		return nil
-	end
+	
+	local publicKernelAPI
 	local function newProcess(name,func,stdin,stdout,stderr,sigh,__kill,parent,user)
 		stdin = stdin or parent.stdin or newStream()
 		stdout = stdout or parent.stdout or newStream()
@@ -1317,6 +1358,7 @@ local function newIsolatedProcessTable()
 			proctbl = processes,
 			argv = {name},
 			user = user,
+			kernelAPI = publicKernelAPI,
 			__kill = __kill
 		},processmt)
 		processesthr[process.thr] = process
@@ -1325,16 +1367,31 @@ local function newIsolatedProcessTable()
 		processesthr[process.thr] = process
 		return process
 	end
+	local pausedthreads = {}
 	return {
 		processtable=processes,
 		newProcess=newProcess,
 		grouptbl=grouptbl,
+		yield=function()
+			table.insert(pausedthreads,coroutine.running())
+			coroutine.yield()
+		end,
+		resumeAll=function()
+			local thrs = pausedthreads
+			pausedthreads = {}
+			for _,thr in ipairs(thrs) do
+				coroutine.resume(thr)
+			end
+		end,
 		processesthr=processesthr,
 		isInGroup=function(groupname,username)
 			return rawIsIn(grouptbl[groupname],username)
 		end,
 		getCurrentProc=function()
 			return processesthr[coroutine.running()]
+		end,
+		setKernelAPI=function(newapi)
+			publicKernelAPI = newapi
 		end
 	}
 end
@@ -1408,6 +1465,7 @@ local function newTerm(devname,user,prompt,stdinf,stdoutf,stderrf,termname,pr,ro
 		proc.pubenv.USER = user
 		proc.pubenv.HOSTNAME = devname
 		proc.pubenv.PS1 = prompt
+		proc.pubenv.workingDir = rootdir
 		stdout:write(string.char(18).."B")
 		--[[
 		--set as init
@@ -1537,7 +1595,7 @@ local function newTerm(devname,user,prompt,stdinf,stdoutf,stderrf,termname,pr,ro
 		end
 	},nil,procparent,user),function() return waitingon end
 end
-local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel API
+local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel API, public accessible API
 	stdoutf("[0.00000] [kernel] initializing")
 	local ti = os.clock()
 	local function rawIsIn(t,v)
@@ -1545,13 +1603,16 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			if rawequal(bb,v) then return k end
 		end
 	end
+	local function log(module,msg)
+		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] ["..module.."] "..msg)
+	end
 	--create proc table
 	local pr = newIsolatedProcessTable()
 	local krnlprocplaceholder = {
 		user="root"
 	}
 	--create filesystem
-	stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [scsi] starting disk")
+	log("scsi","starting disk")
 	local rootdir,du = newIsolatedRootfs(pr.grouptbl,pr.newProcess,pr.getCurrentProc)
 	--load macros
 	local 
@@ -1560,7 +1621,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 	local processtable = pr.processtable
 	processesthr[coroutine.running()] = krnlprocplaceholder
 	task.wait(0.3)
-	stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] mounting /dev/sda1")
+	log("sda","mounting /dev/sda1")
 	local devdir = newDirectory("dev",rootdir,nil,"rwarwar-a")
 	local bindir = newDirectory("bin",rootdir,nil,"rwarwar-a")
 	local sbindir = newDirectory("sbin",rootdir,nil,"rwarwa---")
@@ -1589,6 +1650,14 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		newStreamFile(process.stdin,"stdin",prc,pru,rw)
 		newStreamFile(process.stdout,"stdout",prc,pru,rw)
 		newStreamFile(process.stderr,"stderr",prc,pru,rw)
+		newStreamFile(newStdOut(function(str)
+			if str == "s" and process.state == "I" then
+				process:start()
+			elseif str == "d" and process.state = "I" then
+				process.state = "Z"
+				process.retcode = -1
+			end
+		end),"start",prc,pru,"-w--w----")
 		newFile(pru,"user",prc,pru,ro)
 		newStreamFile(newStreamGen(function(op,arg)
 			if op == "w" then
@@ -1613,14 +1682,23 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 					syshalt()
 				elseif c == "e" then
 					for id,proc in pairs(processtable) do
+						if id == 1 then return end
 						coroutine.wrap(function()
 							pr.processesthr[coroutine.running()] = krnlprocplaceholder
 							proc:terminate()
 						)()
 					end
+				elseif c == "i" then
+					for id,proc in pairs(processtable) do
+						if id == 1 then return end
+						coroutine.wrap(function()
+							pr.processesthr[coroutine.running()] = krnlprocplaceholder
+							proc:kill()
+						)()
+					end
 				end
 			end
-		end),"sysrq-trigger",procdir,nil,"-w--w----")
+		end),"sysrq-trigger",procdir,nil,"rw-rw----")
 	end
 	procdir = newStreamDirectory(function(op,name,objtow)
 		if op == "r" then
@@ -1659,14 +1737,26 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		local proc = getCurrentProc()
 		return propagateStream(proc.stderr,op,arg)
 	end,"stderr",devdir,nil,"rw-rw-rw-")
+	newStreamFile(streamnull,"null",devdir,nil,"rw-rw-rw-")
+	newStreamFile(function(op,arg)
+		if op == "r" then
+			if arg == -1 then
+				return "0"
+			else
+				return string.rep("0",arg)
+			end
+		elseif op == "l" then
+			return 268435455
+		end
+	end,"zero",devdir,nil,"rw-rw-rw-")
 	local stdin = newStreamGen(stdinf)
 	local stdout = newStreamGen(stdoutf)
 	local stderr = newStreamGen(stderrf)
-	stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] loading init")
+	log("kernel","loading init")
 	local function findGroupsOfUser(group,user)
 		local gs = {}
 		for gn,g in pairs(pr.grouptbl) then
-			if rawisIn(g,user) then
+			if rawIsIn(g,user) then
 				table.insert(gs,gn)
 			end
 		end
@@ -1684,11 +1774,11 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				processtable[1]:kill()
 			end)()
 		end
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
+		log("fs","unmounting /dev/sda1")
 		task.wait(0.4)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [scsi] stopping disk")
+		log("scsi","stopping disk")
 		task.wait(1)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] shutting down")
+		log("kernel","shutting down")
 		task.wait(1)
 		for _,f in ipairs(powerdownhooks) do
 			coroutine.wrap(f)("poweroff")
@@ -1703,11 +1793,11 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				processtable[1]:kill()
 			end)()
 		end
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
+		log("fs","unmounting /dev/sda1")
 		task.wait(0.4)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [scsi] stopping disk")
+		log("scsi","stopping disk")
 		task.wait(1)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] system halted")
+		log("kernel","system halted")
 		for _,f in ipairs(powerdownhooks) do
 			coroutine.wrap(f)("halt")
 		end
@@ -1721,9 +1811,11 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				processtable[1]:kill()
 			end)()
 		end
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [fs] unmounting /dev/sda1")
+		log("fs","unmounting /dev/sda1")
 		task.wait(0.4)
-		stdoutf("\n[" .. string.format("%.5f",os.clock()-ti) .."] [kernel] rebooting")
+		log("scsi","stopping disk")
+		task.wait(1)
+		log("kernel","rebooting")
 		task.wait(0.1)
 		for _,f in ipairs(powerdownhooks) do
 			coroutine.wrap(f)("reboot")
@@ -1789,36 +1881,36 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		if not code then
 			stderr:write("access denied.\n")
 			proc:ret(19) -- access denied
+			return
 		else
 			proc.stdout:write("Code:")
 			proc.privenv.code = ""
 		end
-	end
-	local function newEpo()
-		return epoinit,{
-			[signals.SIGALRM]=function(proc)
-				if proc.privenv.code then
-					local c = nil
-					while c ~= "" do
-						c = stdin:read(1)
-						if c == "\n" then
-							if proc.privenv.code == code then
-								syspoweroff()
-								return
-							else
-								stderr:write("Invalid code.\n")
-								proc:ret(19)
-								return
-							end
-						else
-							proc.privenv.code = proc.privenv.code .. c
-						end
+		proc.kernelAPI.yield()
+		while true do
+			local c = nil
+			while c ~= "" do
+				c = stdin:read(1
+				if c == "\n" then
+					if proc.privenv.code == code then
+						syspoweroff()
+						return
+					else
+						stderr:write("Invalid code.\n")
+						proc:ret(19)
+						return
 					end
+				else
+					proc.privenv.code = proc.privenv.code .. c
 				end
 			end
-		}
+			proc.kernelAPI.yield()
+		end
 	end
-	newExecutable(newEpo,"epo",bindir,nil,"rwxrwxr-x")
+	local function newEpo()
+		return epoinit,{}
+	end
+	newExecutable(newEpo,"epo",bindir,"root","rwxrwxr-x")
 	local function cdinit(proc)
 		local dir = proc.parent:getEnv("workingDir")
 		if dir then
@@ -1846,7 +1938,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		end
 	end
 	local function newCd() return cdinit,{} end
-	newExecutable(newCd,"cd",bindir,nil,"rwxrwxr-x")
+	newExecutable(newCd,"cd",bindir,"root","rwxrwxr-x")
 	local function dirinit(proc)
 		local dir = proc.argv[2]
 		if type(dir) == "string" then
@@ -1923,14 +2015,540 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		end
 	end
 	local function newDir() return dirinit,{} end
-	newExecutable(newDir,"dir",bindir,nil,"rwxrwxr-x")
-	local initfile = newExecutable(newInit,"init",sbindir,nil,"rwxrw----")
+	newExecutable(newDir,"ls",bindir,"root","rwxrwxr-x")
+	newExecutable(newDir,"dir",bindir,"root","rwxrwxr-x")
+	local function whoamiinit(proc)
+		local nerr,hostname = pcall(rootdir:to("/etc/hostname"))
+		if not nerr then
+			proc.stderr:write("failed to open /etc/hostname\n")
+			proc:ret(1)
+			return
+		end
+		nerr = pcall(function ()
+			hostname = hostname:read()
+		end)
+		if not nerr then
+			proc.stderr:write("failed to open /etc/hostname\n")
+			proc:ret(1)
+			return
+		end
+		proc.stdout:write(proc.user .. "@" .. hostname)
+		proc:ret(0)
+	end
+	local function newwhoami() return whoamiinit,{} end
+	newExecutable(newwhoami,"whoami",bindir,"root","rwxrwxr-x")
+	local function catinit(proc)
+		local filetoreadpath = proc.argv[2]
+		if filetoreadpath == nil then
+			proc.stderr:write("no file specified\n")
+			proc:ret(1)
+			return
+		end
+		local file,nerr
+		if proc.pubenv.workingDir != nil then
+			nerr,file = pcall(function()
+				return proc.pubenv.workingDir:to(filetoreadpath)
+			end)
+		else
+			nerr,file = pcall(function()
+				return rootdir:to(filetoreadpath,true)
+			end)
+		end
+		if not nerr then
+			proc.stderr:write(file .. "\n")
+			proc:ret(1)
+			return
+		end
+		if file == nil then
+			proc.stderr:write("file not found\n")
+			proc:ret(1)
+			return
+		end
+		nerr,file = pcall(function()
+			return file:read()
+		end)
+		if not nerr then
+			proc.stderr:write(file .. "\n")
+			proc:ret(1)
+			return
+		end
+		proc.stdout:write(file)
+		proc:ret(0)
+	end
+	local function newcat() return catinit,{} end
+	newExecutable(newcat,"cat",bindir,"root","rwxrwxr-x")
+	local function echoinit(proc) 
+		local arguments = {}
+		local sizemultipliers={
+			b=1,
+			k=1000,
+			m=1000000,
+			g=1000000000,
+			t=1000000000000,
+			p=1000000000000000,
+			B=512,
+			K=1024,
+			M=1048576,
+			G=1073741824,
+			T=1099511627776,
+			P=1125899906842624
+		}
+		local sizelimit = sizemultipliers.M * 10
+		local size = sizelimit
+		local blocksize = sizemultipliers.B -- one block, 512 bytes
+		local globalseek = 0
+		local actualargs = {
+			["-wp"]=0,  -- waits for all processes to terminate, auto on for the processes spawned
+			["-b"]=1,   -- block size
+			["-s"]=1,   -- size
+			["-is"]=1,  -- input seek
+			["-os"]=1   -- output seek
+		}
+		for i,v in ipairs(proc.argv) do
+			if i ~= 1 then
+				arguments[i - 1] = v
+			end
+		end
+		local stream = newStream()
+		local types = {v="variable",f="file",p="process",s="seek",n="none",sa="seekawait",pa}
+		local states = {none="none",iargs="iargs",oargs="oargs",inp="inp",out="out",app="app",inputprocess="ip",outputprocess="op",parsingarg="pa"}
+		local statesallowed= {none="none",iargs="iargs",oargs="oargs"}
+		local inputseek = 1
+		local argparse = ""
+		local special = {
+			["<"]="inp",[">"]="out",[">>"]="app",
+			["-if"]="inp",["-of"]="out"}
+		local state = states.none
+		local buffer = {}
+		local stdins = {}
+		local _stdins = {}
+		local _stdouts = {}
+		local _stdapps = {}
+		local stdouts = {}
+		local stdoutstreams = {}
+		local stdapps = {}
+		local function isnumber(n)
+			return pcall(tonumber,n)
+		end
+		proc.privenv.waitforproc={}
+		for _,v in ipairs(arguments) do
+			local k = rawIsIn(special,v)
+			if k then
+				if rawIsIn(statesallowed,state) then
+					if state == statesallowed.iargs then
+						table.insert(stdins,0)
+					elseif state == statesallowed.oargs then
+						table.insert(stdouts,0)
+					end
+					state = states[k]
+				else
+					proc.stderr:write("parsing error\n")
+					proc:ret(1)
+					return
+				end
+			else
+				if state == states.none then
+					if v == "-wp" then
+						proc.privenv.waitforproc = true
+					elseif rawIsIn(actualargs,v) then
+						argparse = v
+						state = states.parsingarg
+					elseif v:sub(1,1) == "$" then
+						stream:write(proc.parent:getEnv(v:sub(2,-1)))
+					else
+						stream:write(v)
+					end
+				elseif state == states.inp then
+					if v == "-p" then
+						state = states.inputprocess
+					elseif v:sub(1,1) == "$" then
+						stream:write(proc.parent:getEnv(v:sub(2,-1)))
+						state = states.none
+					else
+						table.insert(stdins,types.f)
+						table.insert(stdins,v)
+						state = states.none
+					end
+				elseif state == states.out then
+					if v == "-p" then
+						state = states.outputprocess
+					elseif v:sub(1,1) == "$" then
+						table.insert(stdouts,types.v)
+						table.insert(stdouts,v:sub(2,-1))
+						state = states.none
+					else
+						table.insert(stdouts,types.f)
+						table.insert(stdouts,v)
+						state = states.none
+					end
+				elseif state == states.app then
+					if v == "-p" then
+						state = states.outputprocess
+					elseif v:sub(1,1) == "$" then
+						table.insert(stdapps,types.v)
+						table.insert(stdapps,v:sub(2,-1))
+						state = states.none
+					else
+						table.insert(stdapps,types.f)
+						table.insert(stdapps,v)
+						state = states.none
+					end
+				elseif state == states.inputprocess then
+					table.insert(stdins,types.p)
+					table.insert(stdins,v)
+					state = states.iargs
+				elseif state == states.outputprocess then
+					table.insert(stdouts,types.p)
+					table.insert(stdouts,v)
+					state = states.oargs
+				elseif state == states.iargs then
+					table.insert(stdins,v)
+				elseif state == states.oargs then
+					table.insert(stdouts,v)
+				elseif state == states.parsingarg then
+					if argparse == "-b" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+							return
+						end
+						blocksize = i
+						if i > sizelimit then
+							proc.stderr:write("exceeds sizelimit\n")
+							proc:ret(1)
+							return
+						end
+					elseif argparse == "-s" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+						end
+						size = i
+						if i > sizelimit then
+							proc.stderr:write("exceeds sizelimit\n")
+							proc:ret(1)
+							return
+						end
+					elseif argparse == "-is" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+						end
+						inputseek = i + 1
+					elseif argparse = "-os" then
+						local numtoparse = v
+						local mult = 1
+						if sizemultipliers[v:sub(-2,-1)] then
+							mult = sizemultipliers[v:sub(-2,-1)]
+							numtoparse = v:sub(1,-2)
+						end
+						local nerr,i = pcall(tonumber,numtoparse)
+						if not nerr then
+							proc.stderr:write("parsing error\n")
+							proc:ret(1)
+						end
+						table.insert(stdouts,types.s)
+						table.insert(stdouts,i + 1)
+					end
+				end
+			end
+		end
+		local file,nerr
+		local state = types.n
+		for _,i in ipairs(stdins) do
+			local cango = true
+			if state == types.sa then
+				state = types.n
+				if i ~= types.s then
+					table.insert(_stdins,{type="file",object=file,seek=1})
+				else
+					state = types.s
+					cango = false
+				end
+			end
+			if not cango then
+			elseif state == types.n then state = i
+			elseif state == types.f then
+				--get file
+				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				if not nerr then
+					stderr:write(file .. "\n")
+					proc:ret(1)
+					return
+				end
+				if file:isADirectory() then
+					stderr:write("not a file\n")
+					proc:ret(1)
+					return
+				end
+				if not file:canRead() then
+					stderr:write("access denied\n")
+					proc:ret(1)
+					return
+				end
+				state = types.sa
+			elseif state == types.s then
+				table.insert(_stdins,{type="file",object=file,seek=i})
+				state = types.n
+			elseif state == types.p then
+				if type(i) == "number" then
+					--terminator, start process
+					nerr,file = proc.kernelAPI.getFileRelativeFromProc(buffer[1])
+					if not nerr then
+						stderr:write(file.."\n")
+						proc:ret(1)
+						return
+					end
+					local process
+					table.remove(buffer,1)
+					nerr,process = pcall(file.execute,file,buffer)
+					if not nerr then
+						stderr:write(process.."\n")
+						proc:ret(1)
+						return
+					end
+					process.stdout = stream
+					process:start()
+					buffer = {}
+				else
+					table.insert(buffer,i)
+				end
+			end
+		end
+		for _,i in ipairs(stdouts) do
+			local cango = true
+			if state == types.sa then
+				state = types.n
+				if i ~= types.s then
+					table.insert(_stdouts,{type="file",object=file,seek=1})
+				else
+					state = types.s
+					cango = false
+				end
+			end
+			if not cango then
+			elseif state == types.n then 
+				if v == states.s then	
+					stderr:write("parsing error\n")
+					proc:ret(1)
+					return
+				end
+				state = i
+			elseif state == types.f then
+				--get file
+				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				if not nerr then
+					stderr:write(file .. "\n")
+					proc:ret(1)
+					return
+				end
+				if file:isADirectory() then
+					stderr:write("not a file\n")
+					proc:ret(1)
+					return
+				end
+				if not file:canWrite() then
+					stderr:write("access denied\n")
+					proc:ret(1)
+					return
+				end
+				state = types.sa
+			elseif state == types.s then
+				table.insert(_stdouts,{type="file",object=file,seek=i})
+				state = types.n
+			elseif state == types.p then
+				if type(i) == "number" then
+					--terminator, start process
+					nerr,file = proc.kernelAPI.getFileRelativeFromProc(buffer[1])
+					if not nerr then
+						stderr:write(file.."\n")
+						proc:ret(1)
+						return
+					end
+					local process
+					table.remove(buffer,1)
+					nerr,process = pcall(file.execute,file,buffer)
+					if not nerr then
+						stderr:write(process.."\n")
+						proc:ret(1)
+						return
+					end
+					local newstreams = newStream()
+					process.stdin = newstreams
+					table.insert(stdoutstreams,newstreams)
+					process:start()
+					buffer = {}
+				else
+					table.insert(buffer,i)
+				end
+			elseif state == types.v then
+				local varname = v
+				proc.parent.pubenv[varname] = ""
+				local function appendtovar(str)
+					local var = proc.parent:getEnv(varname)
+					proc.parent.pubenv[varname] = var .. str
+				end
+				table.insert(stdoutstreams,newStdOut(appendtovar))
+			end
+		end
+		for _,i in ipairs(stdapps) do
+			local cango = true
+			if state == types.sa then
+				state = types.n
+				if i ~= types.s then
+					table.insert(_stdapps,{type="file",object=file,seek=1})
+				else
+					state = types.s
+					cango = false
+				end
+			end
+			if not cango then
+			elseif state == types.n then state = i
+			elseif state == types.f then
+				--get file
+				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				if not nerr then
+					stderr:write(file .. "\n")
+					proc:ret(1)
+					return
+				end
+				if file:isADirectory() then
+					stderr:write("not a file\n")
+					proc:ret(1)
+					return
+				end
+				if not file:canWrite() then
+					stderr:write("access denied\n")
+					proc:ret(1)
+					return
+				end
+				state = types.sa
+			elseif state == types.s then
+				table.insert(_stdapps,{type="file",object=file,seek=i})
+				state = types.n
+			elseif state == types.p then
+				if type(i) == "number" then
+					--terminator, start process
+					nerr,file = proc.kernelAPI.getFileRelativeFromProc(buffer[1])
+					if not nerr then
+						stderr:write(file.."\n")
+						proc:ret(1)
+						return
+					end
+					local process
+					table.remove(buffer,1)
+					nerr,process = pcall(file.execute,file,buffer)
+					if not nerr then
+						stderr:write(process.."\n")
+						proc:ret(1)
+						return
+					end
+					local newstreams = newStream()
+					process.stdin = newstreams
+					table.insert(stdoutstreams,newstreams)
+					process:start()
+					buffer = {}
+				else
+					table.insert(buffer,i)
+				end
+			elseif state == types.v then
+				local varname = v
+				assert(type(proc.parent.pubenv[varname]) == "string","var must be a string")
+				local function appendtovar(str)
+					local var = proc.parent:getEnv(varname)
+					proc.parent.pubenv[varname] = var .. str
+				end
+				table.insert(stdoutstreams,newStdOut(appendtovar))
+			end
+		end
+		local function initall()
+			local s = stream:readAll()
+			for _,o in ipairs(_stdouts) do
+				o:write(s)
+			end
+			for _,o in ipairs(_stdapps) do
+				o:append(s)
+			end
+			for _,o in ipairs(stdoutstreams) do
+				o:write(s)
+			end
+		end
+		local function pushall()
+			local s = stream:readAll()
+			for _,o in ipairs(_stdouts) do
+				o:append(s)
+			end
+			for _,o in ipairs(_stdapps) do
+				o:append(s)
+			end
+			for _,o in ipairs(stdoutstreams) do
+				o:write(s)
+			end
+		end
+		initall()
+		while true do 
+			for _,fileentry in ipairs(_stdins) do
+				local fileobj = fileentry.object
+				local seekedat = globalseek + fileentry.seek
+				stream:write(fileobj:read(seekedat,blocksize))
+			end
+			globalseek = globalseek + blocksize
+			pushall()
+			--check for EOF
+			for _,fileentry in ipairs(_stdins) do
+				local fileobj = fileentry.object
+				local seekedat = globalseek + fileentry.seek
+				if fileobj:read(seekedat,1) == "" then
+					--reached EOF
+					proc:ret(0)
+					return
+				end
+			end
+			proc.kernelAPI.yield()
+		end
+	end
+	local function newecho() return echoinit,{} end
+	newExecutable(newecho,"echo",bindir,"root","rwxrwxr-x")
+	newExecutable(newecho,"pipe",bindir,"root","rwxrwxr-x")
+	newExecutable(newecho,"dd",bindir,"root","rwxrwxr-x")
+	local initfile = newExecutable(newInit,"init",sbindir,"root","rwxrw----")
 	local ip = initfile:execute()
 	ip.pid = 1
 	ip.stdin = newStdIn(stdinf)
 	ip.stdout = newStdOut(stdoutf)
 	ip.stderr = newStdOut(stderrf)
-	return ip,{
+	local getRunningUser = function()
+		local proc = processesthr[coroutine.running()]
+		if proc then
+			return proc.user
+		end
+	end
+	local ownsGroup = function(group,user)
+		if user == "root" then return true end
+		return user == group
+	end
+	local privatekernelAPI = {
 		syspoweroff = syspoweroff,
 		syshalt = syshalt,
 		sysreboot = sysreboot,
@@ -1940,8 +2558,9 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		setEPOCode=function(codetoset)
 			code = codetoset
 		end
-		reProcAnyRoot=function()
-			pr.processesthr[coroutine.running()]={user="root"}
+		reProcAnyRoot=function(procholder)
+			procholder = procholder or ip -- init process
+			pr.processesthr[coroutine.running()]=procholder
 		end
 		powerdownhook=function(f)
 			--function (action) -> ?
@@ -1974,13 +2593,71 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		newStreamFile = du.newStreamFile,
 		newStreamDirectory = du.newStreamDirectory,
 		devdir = devdir,
+		bindir = bindir,
 		state = function()
 			if powerdown == false then
 				return "Running"
 			end
 			return "Offline"
-		end
+		end,
+		resume=pr.resumeAll,
+		yield=pr.yield,
+		log=log
 	}
+	local publicKernelAPI = {
+		rootfs = rootdir,
+		getRunningUser = getRunningUser,
+		getFileRelativeFromProc = function(file) --nerr, file/msg
+			return pcall(function()
+				local proc = processesthr[coroutine.running()]
+				if not proc then error("function can't be used in an anonymous thread") end
+				local workingDir = proc:getEnv("workingDir")
+				local newfile
+				if workingDir == nil then
+					newfile = rootdir:to(file,true)
+				else 
+					newfile = workingDir:to(file)
+				end
+				if newfile == nil then error("file not found") end
+				return newfile
+			end)
+		end,
+		isThreadRooted = function()
+			local user = getRunningUser()
+			if user == nil then return false end
+			return isInGroup("root",user)
+		end,
+		isInGroup=isInGroup,
+		isCurrentInGroup=function(group)
+			local user = getRunningUser()
+			if user == nil then return false end
+			return isInGroup(group,user)
+		end,
+		addUserToGroup=function(group,user)
+			local cu = getRunningUser()
+			if user == nil then error("access denied")
+			if ownsGroup(group,cu) then
+				privatekernelAPI.addUserInGroup(group,user)
+			end
+		end,
+		removeUserFromGroup=function(group,user)
+			local cu = getRunningUser()
+			if user == nil then error("access denied")
+			if ownsGroup(group,cu) then
+				privatekernelAPI.removeUserInGroup(group,user)
+			end
+		end,
+		ownsGroup = ownsGroup,
+		newStream=newStream,
+		newStreamGen=newStreamGen,
+		newStdIn=newStdIn,
+		newStdOut=newStdOut,
+		newNullStream=newNullStream,
+		findGroupsOfUser=findGroupsOfUser,
+		yield=pr.yield
+	}
+	table.freeze(publicKernelAPI)
+	return ip,privatekernelAPI,publicKernelAPI
 end
 return {
     newStream=newStream,
