@@ -1,4 +1,5 @@
 dirs = [
+    "LICENSE.md",
     "loadstring.lua",
     "split.lua",
     "stream.lua",
