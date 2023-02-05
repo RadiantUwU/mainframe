@@ -1215,6 +1215,13 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		stdin=stdin,
 		stdout=stdout,
 		stderr=stderr,
+		killUser=function(user)
+			for _,p in pairs(processtbl) do
+				if p.user == user then
+					p:kill()
+				end
+			end
+		end,
 		setEPOCode=function(codetoset)
 			code = codetoset
 		end,
