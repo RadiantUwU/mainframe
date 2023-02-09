@@ -971,7 +971,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				state = i
 			elseif state == types.f then
 				--get file
-				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				nerr,file = proc.kernelAPI.getFileRelativeFromProcOrCreate(i)
 				if not nerr then
 					stderr:write(file .. "\n")
 					proc:ret(1)
@@ -1041,7 +1041,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 			elseif state == types.n then state = i
 			elseif state == types.f then
 				--get file
-				nerr,file = proc.kernelAPI.getFileRelativeFromProc(i)
+				nerr,file = proc.kernelAPI.getFileRelativeFromProcOrCreate(i)
 				if not nerr then
 					stderr:write(file .. "\n")
 					proc:ret(1)
@@ -1288,6 +1288,28 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 				return newfile
 			end)
 		end,
+		getFileRelativeFromProcOrCreate = function(file) --nerr, file/msg
+			return pcall(function()
+				local proc = processesthr[coroutine.running()]
+				if not proc then error("function can't be used in an anonymous thread") end
+				local workingDir = proc:getEnv("workingDir")
+				local newfile
+				if workingDir == nil then
+					newfile = rootdir:to(file,true)
+				else 
+					newfile = workingDir:to(file)
+				end
+				if newfile == nil then 
+					local folder = 
+					if workingDir == nil then
+						newfile = rootdir:to(file,true)
+					else 
+						newfile = workingDir:to(file)
+					end
+				end
+				return newfile
+			end)
+		end,
 		isThreadRooted = function()
 			local user = getRunningUser()
 			if user == nil then return false end
@@ -1322,6 +1344,7 @@ local function newSystem(devname,stdinf,stdoutf,stderrf) --> init proc, kernel A
 		findGroupsOfUser=findGroupsOfUser,
 		yield=pr.yield
 	}
+	setmetatable(privatekernelAPI,{__index=publicKernelAPI})
 	pr.setKernelAPI(publicKernelAPI)
 	ip.kernelAPI = publicKernelAPI
 	table.freeze(publicKernelAPI)
