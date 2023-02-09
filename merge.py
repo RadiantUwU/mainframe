@@ -3,6 +3,7 @@ dirs = [
     "loadstring.lua",
     "split.lua",
     "dispatchableEvent.lua",
+    "mutex.lua",
     "stream.lua"
 ]
 strs = ""
