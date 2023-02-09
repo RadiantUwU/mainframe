@@ -2,13 +2,8 @@ dirs = [
     "LICENSE.md",
     "loadstring.lua",
     "split.lua",
-    "stream.lua",
-    "mutex.lua",
-    "objtraits.lua",
-    "objects.lua",
-    "process.lua",
-    "term.lua",
-    "objtoret.lua"
+    "dispatchableEvent.lua",
+    "stream.lua"
 ]
 strs = ""
 for i in dirs:
