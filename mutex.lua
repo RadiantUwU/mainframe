@@ -5,6 +5,10 @@ local function MutexModule()
     local panicEnabled = false --If true, creates a new method :panic(), releases all threads
 
     MutexCls.__index = MutexCls
+    MutexCls.__metatable = false
+    MutexCls.__newindex = function(t,k,v)
+        error("frozen table")
+    end
     function MutexCls:lock()
         local t = _private[self]
         local b = #t == 0
@@ -51,7 +55,6 @@ local function MutexModule()
     --Freeze all functions
     return function()
         local x = setmetatable({},MutexCls)
-        table.freeze(x)
         _private[x] = setmetatable({},weaktbl)
         return x
     end
