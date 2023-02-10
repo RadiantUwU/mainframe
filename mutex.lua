@@ -2,7 +2,7 @@ local function MutexModule()
     local MutexCls = {}
     local _private = setmetatable({},{__mode="k"})
     local weaktbl = {__mode="v"}
-    local panicEnabled = false --If true, creates a new method :panic(), releases all threads
+    local panicEnabled = true --If true, creates a new method :panic(), releases all threads
 
     MutexCls.__index = MutexCls
     MutexCls.__metatable = false
