@@ -2,6 +2,7 @@ dirs = [
     "LICENSE.md",
     "loadstring.lua",
     "table_extend.lua",
+    "thread.lua",
     "split.lua",
     "dispatchableEvent.lua",
     "mutex.lua",
