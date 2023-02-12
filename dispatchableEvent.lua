@@ -40,3 +40,35 @@ local function newPrivateEvent()
         end
     end
 end
+local function newPublicEvent()
+    local hooks = {}
+    return setmetatable({
+        Connect=function(f)
+            table.insert(hooks,f)
+            return setmetatable({
+                Disconnect=function()
+                    pcall(function()
+                        table.remove(hooks,rawFind(hooks,f))
+                    end)
+                end
+            },frozenMetaTable)
+        end,
+        Wait=function()
+            local currentThread = coroutine.running()
+            local function f(...)
+                coroutine.resume(currentThread,...)
+            end
+            table.insert(hooks,f)
+            local args = table.pack(coroutine.yield())
+            pcall(function()
+                table.remove(hooks,rawFind(hooks,f))
+            end)
+            return table.unpack(args)
+        end,
+        Fire=function(...)
+            for _,f in ipairs(hooks) do
+                coroutine.wrap(f)(...)
+            end
+        end
+    },frozenMetaTable)
+end
