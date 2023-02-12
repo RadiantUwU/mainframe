@@ -10,6 +10,6 @@ dirs = [
 strs = ""
 for i in dirs:
     with open(i) as fw:
-        strs += fw.read() + "\n"
+        strs += "--[[==\n    " + i + "\n==]]--\n" + fw.read() + "\n"
 with open("out.lua","w") as fw:
     fw.write(strs)
