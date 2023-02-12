@@ -4,7 +4,8 @@ dirs = [
     "split.lua",
     "dispatchableEvent.lua",
     "mutex.lua",
-    "stream.lua"
+    "stream.lua",
+    "process.lua"
 ]
 strs = ""
 for i in dirs:
