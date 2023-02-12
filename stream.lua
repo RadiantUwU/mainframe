@@ -102,3 +102,31 @@ local genstreamt:seek(at)
     assert(type(at) == "number","at must be number")
     return _streamdata[self]("s",at)
 end
+
+local streamt:getWriteEvent()
+    return _streamevent[self]
+end
+
+local genstreamt:getWriteEvent()
+    return _streamevent[self]
+end
+
+local function newStream(base)
+    base = base or ""
+    local obj = {}
+    local ev,evcall = newPrivateEvent()
+    _streamdata[obj] = ""
+    _streamlock[obj] = newmutex()
+    _streamevent[obj] = ev
+    _streameventcall[obj] = evcall
+    return setmetatable(obj,streamt)
+end
+
+local function newGenStream(func)
+    local obj = {}
+    local ev,evcall = newPrivateEvent()
+    _streamdata[obj] = func
+    _streamevent[obj] = ev
+    _streameventcall[obj] = evcall
+    return setmetatable(obj,genstreamt)
+end
