@@ -4,7 +4,7 @@ local SignalReversed = {
     "SIGINT",    -- Interrupt, equivalent of CTRL C
     "SIGQUIT",   -- Request to quit/exit
     "SIGILL",    -- Unused, critical, ill-formed instruction
-    "SIGTRAP",   -- Unused, meant to get called when debugging instuction by instruction
+    "SIGTRAP",   -- Unused, critical, meant to get called when debugging instuction by instruction
     "SIGABRT",   -- Abort execution,critical,an error occured and it cannot recover
     "SIGBUS",    -- Unused, critical
     "SIGFPE",    -- Unused, critical
@@ -29,7 +29,7 @@ local SignalReversed = {
     "SIGWINCH",  -- Unused
     "SIGIO",     -- IO stream available
     "SIGPWR",    -- Unused, meant to signal power loss
-    "SIGUNUSED"     -- Unused
+    "SIGUNUSED"  -- Unused
 }
 local Signal = {}
 for v,signame in ipairs(SignalReversed) do
@@ -39,6 +39,23 @@ Signal.SIGIOT = Signal.SIGABRT
 Signal.SIGPOLL = Signal.SIGIO
 Signal.SIGLOST = Signal.SIGPWR
 Signal.SIGSYS = Signal.SIGUNUSED
+local CriticalSignals = {
+    "SIGILL",
+    "SIGTRAP",
+    "SIGABRT",
+    "SIGBUS",
+    "SIGFPE",
+    "SIGKILL",
+    "SIGSEGV",
+    "SIGTERM",
+    "SIGSTKFLT",
+    "SIGVTALRM"
+}
+
+local function isCriticalSignal(signum)
+    return rawFind(CriticalSignals,SignalReversed[signum]) ~= nil
+end
+
 local function newProcessTable()
     local kernelAPI
     local yieldmutex = newmutex()
@@ -86,6 +103,8 @@ local function newProcessTable()
         yieldmutex:unlock()
     end
     
+
+
     return {
         yield=yield,
         processthreads=processthreads,
