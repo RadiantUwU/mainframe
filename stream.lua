@@ -8,6 +8,7 @@ local streamt:write(s,at)
     at = at or -1
     assert(type(s) == "string","s must be string")
     assert(type(at) == "number","at must be number")
+    if _streamdata[self] == nil then error("stream is closed.",2) end
     _streamlock[self]:lock()
     local nerr,err = pcall(function()
         if at == -1 then _streamdata[self] = _streamdata[self] + s
@@ -46,6 +47,7 @@ local streamt:read(amount,at)
     amount = amount or -1
     assert(type(amount) == "number","amount must be number")
     assert(type(at) == "number","at must be number")
+    if _streamdata[self] == nil then error("stream is closed.",2) end
     _streamlock[self]:lock()
     local nerr,err = pcall(function()
         local s
@@ -81,6 +83,7 @@ local genstreamt:readAll()
     return _streamdata[self]("ra")
 end
 local streamt:available()
+    if _streamdata[self] == nil then return 0 end
     return #_streamdata[self]
 end
 local genstreamt:available()
@@ -95,6 +98,7 @@ end
 local streamt:seek(at)
     at = at or 0
     assert(type(at) == "number","at must be number")
+    if _streamdata[self] == nil then error("stream is closed.",2) end
     _streamdata[self] = string.sub(_streamdata[self],1+at,-1)
 end
 local genstreamt:seek(at)
@@ -129,4 +133,66 @@ local function newGenStream(func)
     _streamevent[obj] = ev
     _streameventcall[obj] = evcall
     return setmetatable(obj,genstreamt)
+end
+
+local function newBasicStdin(func,allowWrite)
+    allowWrite = allowWrite or false
+    --func must not yield!
+    
+    if allowWrite then
+        local backendstream = newStream()
+        local function updateBuf()
+            if _streamdata[backendstream] == nil then return end
+            backendstream:write(func())
+        end
+        return newGenStream(function(op,a1,a2)
+            updateBuf()
+            if op == "r" then
+                if _streamdata[backendstream] == nil then error("stream is closed",3) end
+                return backendstream:read(a1,a2)
+            elseif op == "ra" then
+                return backendstream:readAll()
+            elseif op == "w" then
+                if _streamdata[backendstream] == nil then error("stream is closed",3) end
+                return backendstream:write(a1,a2)
+            elseif op == "wa" then
+                return backendstream:writeAll(a1)
+            elseif op == "a" then
+                if _streamdata[backendstream] == nil then return 0 end
+                return backendstream:available()
+            elseif op == "s" then
+                if _streamdata[backendstream] == nil then error("stream is closed",3) end
+                return backendstream:seek(a1)
+            elseif op == "c" then
+                return backendstream:close()
+            end
+        end)
+    else
+        local backendstream = newStream()
+        local function updateBuf()
+            if _streamdata[backendstream] == nil then return end
+            backendstream:write(func())
+        end
+        return newGenStream(function(op,a1,a2)
+            if op == "r" then
+                if _streamdata[backendstream] == nil then error("stream is closed",3) end
+                updateBuf()
+                return backendstream:read(a1,a2)
+            elseif op == "ra" then
+                if _streamdata[backendstream] == nil then error("stream is closed",3) end
+                updateBuf()
+                return backendstream:readAll()
+            elseif op == "a" then
+                if _streamdata[backendstream] == nil then return 0 end
+                updateBuf()
+                return backendstream:available()
+            elseif op == "s" then
+                if _streamdata[backendstream] == nil then error("stream is closed",3) end
+                updateBuf()
+                return backendstream:seek(a1)
+            elseif op == "c" then
+                return backendstream:close()
+            end
+        end)
+    end
 end
