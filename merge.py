@@ -7,7 +7,8 @@ dirs = [
     "dispatchableEvent.lua",
     "mutex.lua",
     "stream.lua",
-    "process.lua"
+    "process.lua",
+    "fileobject.lua"
 ]
 strs = ""
 for i in dirs:
