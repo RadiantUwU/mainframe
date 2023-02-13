@@ -10,3 +10,8 @@ local function table_extend(t,tapp,overwrite)
     end
     return t
 end
+local function table_clone(t)
+    local nt = {}
+    for k,v in pairs(t) do nt[k] = v end
+    return nt
+end
