@@ -1,10 +1,10 @@
 local streammt = {}
 local genstreammt = {}
 local _streamdata = setmetatable({},{__mode="k"})
-local _streamlock = setmetatable({}.{__mode="k"})
+local _streamlock = setmetatable({},{__mode="k"})
 local _streamevent = setmetatable({},{__mode="k"})
 local _streameventcall = setmetatable({},{__mode="k"})
-local streamt:write(s,at)
+function streammt:write(s,at)
     at = at or -1
     assert(type(s) == "string","s must be string")
     assert(type(at) == "number","at must be number")
@@ -24,7 +24,7 @@ local streamt:write(s,at)
         error(err,2)
     end
 end
-local genstreamt:write(s,at)
+function genstreammt:write(s,at)
     at = at or -1
     assert(type(s) == "string","s must be string")
     assert(type(at) == "number","at must be number")
@@ -32,17 +32,17 @@ local genstreamt:write(s,at)
     _streameventcall[self]()
     return table.unpack(r)
 end
-local streamt:writeAll(s)
+function streammt:writeAll(s)
     _streamlock[self]:lock()
     _streamdata[self] = s
     _streamlock[self]:unlock()
 end
-local genstreamt:writeAll(s)
+function genstreammt:writeAll(s)
     local r = {_streamdata[self]("wa",s)}
     _streameventcall[self]()
     return table.unpack(r)
 end
-local streamt:read(amount,at)
+function streammt:read(amount,at)
     at = at or 0
     amount = amount or -1
     assert(type(amount) == "number","amount must be number")
@@ -65,53 +65,51 @@ local streamt:read(amount,at)
     if nerr then return err end
     error(err,2)
 end
-local genstreamt:read(amount, at)
+function genstreammt:read(amount, at)
     at = at or 0
     amount = amount or -1
     assert(type(amount) == "number","amount must be number")
     assert(type(at) == "number","at must be number")
     return _streamdata[self]("r",amount,at)
 end
-local streamt:readAll()
+function streammt:readAll()
     _streamlock[self]:lock()
     local s = _streamdata[self]
     _streamlock[self]:unlock()
     _streamdata[self] = ""
     return s
 end
-local genstreamt:readAll()
+function genstreammt:readAll()
     return _streamdata[self]("ra")
 end
-local streamt:available()
+function streammt:available()
     if _streamdata[self] == nil then return 0 end
     return #_streamdata[self]
 end
-local genstreamt:available()
+function genstreammt:available()
     return _streamdata[self]("a")
 end
-local streamt:close()
+function streammt:close()
     _streamdata[self] = nil
 end
-local genstreamt:close()
+function genstreammt:close()
     return _streamdata[self]("c")
 end
-local streamt:seek(at)
+function streammt:seek(at)
     at = at or 0
     assert(type(at) == "number","at must be number")
     if _streamdata[self] == nil then error("stream is closed.",2) end
     _streamdata[self] = string.sub(_streamdata[self],1+at,-1)
 end
-local genstreamt:seek(at)
+function genstreammt:seek(at)
     at = at or 0
     assert(type(at) == "number","at must be number")
     return _streamdata[self]("s",at)
 end
-
-local streamt:getWriteEvent()
+function streammt:getWriteEvent()
     return _streamevent[self]
 end
-
-local genstreamt:getWriteEvent()
+function genstreammt:getWriteEvent()
     return _streamevent[self]
 end
 
@@ -123,7 +121,7 @@ local function newStream(base)
     _streamlock[obj] = newmutex()
     _streamevent[obj] = ev
     _streameventcall[obj] = evcall
-    return setmetatable(obj,streamt)
+    return setmetatable(obj,streammt)
 end
 
 local function newGenStream(func)
@@ -132,7 +130,7 @@ local function newGenStream(func)
     _streamdata[obj] = func
     _streamevent[obj] = ev
     _streameventcall[obj] = evcall
-    return setmetatable(obj,genstreamt)
+    return setmetatable(obj,genstreammt)
 end
 
 local function newBasicStdin(func,allowWrite)

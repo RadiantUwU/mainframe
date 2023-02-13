@@ -1,7 +1,8 @@
 local isRoblox = game and workspace and Vector3 and UDim2
 if isRoblox then isRoblox = true else isRoblox = false end
 local newThread
-local stopThread
+local deleteThread
+local dispatchThread
 if isRoblox then
     function newThread(func, ...)
         return task.defer(func,...) -- do not immediately spawn it!
@@ -11,7 +12,7 @@ if isRoblox then
         if status == "normal" or status == "suspended" then
             task.close(thread)
             return
-        elseif status == "dead"
+        elseif status == "dead" then
             return
         end
         local hook
@@ -20,7 +21,7 @@ if isRoblox then
             if status == "normal" or status == "suspended" then
                 task.close(thread)
                 hook:Disconnect()
-            elseif status == "dead"
+            elseif status == "dead" then
                 hook:Disconnect()
             end
         end)
