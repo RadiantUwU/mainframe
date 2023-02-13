@@ -53,6 +53,8 @@ return function (terminal,poweroffhookadd,stdinf)
                     state = 1
                 elseif c == DC2 then
                     state = 2
+                elseif c == FF then
+                    terminal:clear()
                 else
                     terminal:write(c)
                 end
