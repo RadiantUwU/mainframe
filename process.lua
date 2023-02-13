@@ -124,7 +124,6 @@ local kernelAPI
         end
         _yieldedthreads = {}
         _yieldedpermathreads = {}
-        yieldmutex:unlock()
         for thr,proc in pairs(processthreads) do
             deleteThread(thr) -- kill all threads
         end
@@ -137,6 +136,7 @@ local kernelAPI
             proc.stdout:close()
             proc.stderr:close()
         end
+        yieldmutex:panic()
     end
     local function suspendthreads(proc)
         proc.stat = "T"
