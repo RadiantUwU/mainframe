@@ -42,7 +42,7 @@ local function MutexModule()
         function MutexCls:panic()
             local t = _private[self]
             local nt = table.clone(t)
-            table.clear(t)
+            _private[self] = setmetatable({},{__mode="k"})
             for _,thr in ipairs(nt) do
                 coroutine.resume(thr,true)
             end
