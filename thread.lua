@@ -25,13 +25,18 @@ if isRoblox then
             end
         end)
     end
+    function dispatchThread(thr,...)
+        --already dispatching on next resumption cycle
+    end
 else --legacy support
     function newThread(func, ...)
         local thr = coroutine.create(func)
-        coroutine.resume(thr,...)
         return thr
     end
     function deleteThread(thread)
         --there is no valid way to make sure a thread is killed
+    end
+    function dispatchThread(thr,...)
+        coroutine.resume(thr,...)
     end
 end
