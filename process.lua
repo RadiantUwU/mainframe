@@ -280,7 +280,7 @@ local kernelAPI
         if not nerr then error(err) end
     end
 
-    function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath)
+    function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath,pubenv,privenv)
         pid = pid or getnewPID()
         user = user or "root"
         local proc = {}
@@ -307,7 +307,9 @@ local kernelAPI
             retval=nil,
             returntype=0,
             mainthread=nil,
-            forked=false
+            forked=false,
+            pubenv=table_clone(pubenv or {}),
+            privenv=table_clone(privenv or {})
         }
         local pdata = _processdata[proc]
         pdata.mainthread = pdata.threads[1]
@@ -456,7 +458,7 @@ local kernelAPI
     function processmt:fork(func)
         assert(processthreads[coroutine.running()] == self,"cannot fork outside of process")
         local pdata = _processdata[self]
-        local proc = processmt.new(pdata.name,func,pdata.sigh,self,pdata.user,nil,pdata.stdin,pdata.stdout,pdata.stderr,pdata.tty,pdata.argv,pdata.filepath)
+        local proc = processmt.new(pdata.name,func,pdata.sigh,self,pdata.user,nil,pdata.stdin,pdata.stdout,pdata.stderr,pdata.tty,pdata.argv,pdata.filepath,table_clone(pdata.pubenv),table_clone(pdata.privenv))
         local thr = coroutine.running()
         processthreads[thr] = proc
         proc:forkStreams()
@@ -491,6 +493,22 @@ local kernelAPI
         deleteThread(coroutine.running())
         while true do coroutine.yield() end
         -- marks the end of the thread
+    end
+    function processmt:getEnv(key)
+        return _processdata[self].pubenv[key]
+    end
+    function processmt:setEnv(key,value)
+        local sendingproc = processthreads[coroutine.running()]
+        if not hasaccessover(self,sendingproc) then error("access denied") end
+        _processdata[self].pubenv[key] = value
+    end
+    function processmt:setPrivEnv(key,value)
+        if processthreads[coroutine.running()] ~= self then error("cannot set private enviroment outside of process") end
+        _processdata[self].privenv[key] = value
+    end
+    function processmt:getPrivEnv(key)
+        if processthreads[coroutine.running()] ~= self then error("cannot get private enviroment outside of process") end
+        return _processdata[self].privenv[key]
     end
     local rootproc = setmetatable({},processmt)
     _processdata[rootproc] = {user="root"}
