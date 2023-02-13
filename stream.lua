@@ -218,3 +218,41 @@ local function newBasicStderr(func)
         func(string.char(18).."2"..a1..string.char(18).."1",a2)
     end)
 end
+
+local function cloneStream(oldstream,allowClosing) --> newstream
+    if allowClosing then
+        return newGenStream(function(op,a1,a2)
+            if op == "r" then
+                return oldstream:read(a1,a2)
+            elseif op == "ra" then
+                return oldstream:readAll()
+            elseif op == "w" then
+                return oldstream:write(a1,a2)
+            elseif op == "wa" then
+                return oldstream:writeAll(a1)
+            elseif op == "a" then
+                return oldstream:available()
+            elseif op == "s" then
+                return oldstream:seek(a1)
+            elseif op == "c" then
+                return oldstream:close()
+            end
+        end)
+    else
+        return newGenStream(function(op,a1,a2)
+            if op == "r" then
+                return oldstream:read(a1,a2)
+            elseif op == "ra" then
+                return oldstream:readAll()
+            elseif op == "w" then
+                return oldstream:write(a1,a2)
+            elseif op == "wa" then
+                return oldstream:writeAll(a1)
+            elseif op == "a" then
+                return oldstream:available()
+            elseif op == "s" then
+                return oldstream:seek(a1)
+            end
+        end)
+    end
+end
