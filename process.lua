@@ -77,7 +77,7 @@ end
 local weaktbl = {__mode="k"}
 
 local function newProcessTable()
-local kernelAPI
+    local kernelAPI
     local yieldmutex = newmutex()
     local _yieldedthreads = {}
     local _yieldedpermathreads = {}
