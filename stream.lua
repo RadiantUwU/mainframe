@@ -196,3 +196,19 @@ local function newBasicStdin(func,allowWrite)
         end)
     end
 end
+
+local function newBasicStdout(func)
+    return newGenStream(function(op,a1,a2)
+        if op == "r" then
+            return ""
+        elseif op == "ra" then
+            return ""
+        elseif op == "w" then
+            return func(a1,a2)
+        elseif op == "wa" then
+            return func(a1,1)
+        elseif op == "a" then
+            return 0
+        end
+    end)
+end
