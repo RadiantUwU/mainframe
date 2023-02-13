@@ -523,6 +523,13 @@ local function newProcessTable()
     return {
         yield=yield,
         processthreads=processthreads,
+        getCurrentProcess=function ()
+            return processthreads[coroutine.running()]
+        end,
+        getCurrentUser=function ()
+            local p = processthreads[coroutine.running()]
+            if p then return _processdata[p].user end
+        end,
         resume=resume,
         terminate=terminate,
         setKernelAPI=function(new)
