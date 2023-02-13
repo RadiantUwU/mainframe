@@ -212,3 +212,9 @@ local function newBasicStdout(func)
         end
     end)
 end
+
+local function newBasicStderr(func)
+    return newBasicStdout(function(a1,a2)
+        func(string.char(18).."2"..a1..string.char(18).."1",a2)
+    end)
+end
