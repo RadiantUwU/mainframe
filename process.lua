@@ -58,7 +58,7 @@ local UnhandledSignals = {
 }
 local StatDescription = {
     R="running",
-    D="dead",
+    D="uninterruptible sleep",
     Z="zombie",
     T="suspended",
     S="sleeping"
