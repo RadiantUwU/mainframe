@@ -70,9 +70,12 @@ local function isUnhandledSignal(signum)
     return rawFind(UnhandledSignals,SignalReversed[signum]) ~= nil
 end
 local function hasaccessover(proc,checkedproc)
-    local user = _processdata[checkedproc].user
+    local cdata = _processdata[checkedproc]
+    local pdata = _processdata[proc]
+    local user = cdata.user
+    local trueuser = pdata.trueuser
     if user == "root" then return true end
-    return user == _processdata[proc].user
+    return user == pdata.user or user == trueuser
 end
 local weaktbl = {__mode="k"}
 
@@ -280,9 +283,10 @@ local function newProcessTable()
         if not nerr then error(err) end
     end
 
-    function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath,pubenv,privenv)
+    function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath,pubenv,privenv,trueuser)
         pid = pid or getnewPID()
         user = user or "root"
+        trueuser = trueuser or user
         local proc = {}
         setmetatable(proc,processmt)
         processtbl[pid] = proc
@@ -299,6 +303,8 @@ local function newProcessTable()
             stderr=stderr,
             tty=tty,
             argv=argv,
+            user=user,
+            trueuser=trueuser,
             filepath=filepath,
             threads = {newThread(mainthreadrunner,init,proc)},
             _onwrite = onwrite,
@@ -404,6 +410,9 @@ local function newProcessTable()
     function processmt:getUser()
         return _processdata[self].user
     end
+    function processmt:getOwningUser()
+        return _processdata[self].trueuser
+    end
     function processmt:getStdIn()
         return _processdata[self].stdin
     end
@@ -458,7 +467,7 @@ local function newProcessTable()
     function processmt:fork(func)
         assert(processthreads[coroutine.running()] == self,"cannot fork outside of process")
         local pdata = _processdata[self]
-        local proc = processmt.new(pdata.name,func,pdata.sigh,self,pdata.user,nil,pdata.stdin,pdata.stdout,pdata.stderr,pdata.tty,pdata.argv,pdata.filepath,table_clone(pdata.pubenv),table_clone(pdata.privenv))
+        local proc = processmt.new(pdata.name,func,pdata.sigh,self,pdata.user,nil,pdata.stdin,pdata.stdout,pdata.stderr,pdata.tty,pdata.argv,pdata.filepath,table_clone(pdata.pubenv),table_clone(pdata.privenv),pdata.trueuser)
         local thr = coroutine.running()
         processthreads[thr] = proc
         proc:forkStreams()
@@ -467,7 +476,7 @@ local function newProcessTable()
         ppdata.forked = true
         return func(self,proc.pid)
     end
-    function processmt:exec(name,init,sigh,argv,filepath)
+    function processmt:exec(name,init,sigh,argv,filepath,trueuser)
         local thr = coroutine.running()
         assert(processthreads[thr] == self,"cannot exec outside of process")
         local pdata = _processdata[self]
@@ -489,6 +498,7 @@ local function newProcessTable()
         thr = newThread(mainthreadrunner,init,self)
         pdata.mainthread = thr
         pdata.threads={thr}
+        pdata.trueuser = trueuser or pdata.trueuser
         dispatchThread(thr)
         deleteThread(coroutine.running())
         while true do coroutine.yield() end
