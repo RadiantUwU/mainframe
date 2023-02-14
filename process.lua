@@ -530,6 +530,11 @@ local function newProcessTable()
         processthreads[thr] = currproc
         if t[1] then table.remove(t,1) return table.unpack(t) else error(t[2]) end
     end
+    local grouptbl = setmetatable({},{__index=function (t,k)
+        local nt = {}
+        rawset(t,k,nt)
+        return nt
+    end})
     return {
         yield=yield,
         processthreads=processthreads,
@@ -551,6 +556,25 @@ local function newProcessTable()
         end,
         threadIsOf = threadIsOf,
         rootproc=rootproc,
-        runFuncAsRoot=runFuncAsRoot
+        runFuncAsRoot=runFuncAsRoot,
+        grouptbl=grouptbl,
+        addUserToGroup=function (group,user)
+            grouptbl[group][user]=true
+        end,
+        removeUserFromGroup=function (group,user)
+            grouptbl[group][user]=nil
+        end,
+        addGroup=function (group)
+            if grouptbl[group] then end -- create group if it doesnt exist
+        end,
+        delGroup=function (group)
+            grouptbl[group]=nil
+        end,
+        isOwnerOfGroup=function (group,user)
+            return group == user
+        end,
+        isInGroup=function (group,user)
+            return grouptbl[group][user] == true
+        end
     }
 end
