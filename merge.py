@@ -8,8 +8,7 @@ dirs = [
     "mutex.lua",
     "stream.lua",
     "process.lua",
-    "fileobject.lua",
-    "fileclasses.lua"
+    "fileobject.lua"
 ]
 strs = ""
 for i in dirs:
