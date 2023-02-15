@@ -90,7 +90,11 @@ local function newProcessTable()
 
     end
     processmt.__index = processmt
-    local processthreads = setmetatable({},{__mode="k"})
+    local processthreads = setmetatable({},{__mode="kv"})
+    local function procdeleteThread(thr)
+        processthreads[thr] = nil
+        deleteThread(thr)
+    end
     local function threadIsOf(proc) 
         return processthreads[coroutine.running()] == proc
     end
@@ -128,7 +132,7 @@ local function newProcessTable()
         _yieldedthreads = {}
         _yieldedpermathreads = {}
         for thr,proc in pairs(processthreads) do
-            deleteThread(thr) -- kill all threads
+            procDeleteThread(thr) -- kill all threads
         end
         for pid,proc in pairs(processtbl) do
             proc.stat = "Z"
@@ -138,8 +142,13 @@ local function newProcessTable()
             proc.stdin:close()
             proc.stdout:close()
             proc.stderr:close()
+            proc.threads = {}
         end
         yieldmutex:panic()
+        -- all processes cleared
+        processthreads = setmetatable({},{__mode="kv"})
+        processtbl = {}
+
     end
     local function suspendthreads(proc)
         proc.stat = "T"
@@ -223,11 +232,12 @@ local function newProcessTable()
     local function killProcess(proc,pdata,signal)
         terminateyieldproc(proc)
         for _,thr in ipairs(pdata.threads) do
-            deleteThread(thr)
+            procDeleteThread(thr)
         end
         -- this process has been killed
         pdata.stat = "Z"
         pdata.threads = {}
+        pdata.mainthread = nil
         if pdata.stdin then
             pdata.stdinhook:Disconnect()
             pdata.stdin:close()
@@ -255,11 +265,12 @@ local function newProcessTable()
         pdata.returntype = 1
         terminateyieldproc(proc)
         for _,thr in ipairs(pdata.threads) do
-            deleteThread(thr)
+            procDeleteThread(thr)
         end
         -- this process has been killed
         pdata.stat = "Z"
         pdata.threads = {}
+        pdata.mainthread = nil
         if pdata.stdin then
             pdata.stdinhook:Disconnect()
             pdata.stdin:close()
@@ -282,7 +293,6 @@ local function newProcessTable()
         table.remove(pdata.threads,rawFind(pdata.threads,coroutine.running()))
         if not nerr then error(err) end
     end
-
     function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath,pubenv,privenv,trueuser,groupuser)
         pid = pid or getnewPID()
         user = user or "root"
@@ -488,11 +498,11 @@ local function newProcessTable()
         local threads = pdata.threads
         --kill all other threads
         while threads[1] ~= thr do
-            deleteThread(threads[1])
+            procDeleteThread(threads[1])
             table.remove(threads,1)
         end
         while threads[2] ~= nil do
-            deleteThread(threads[2]) 
+            procDeleteThread(threads[2]) 
             table.remove(threads,2)
         end
         pdata.name = name
@@ -505,7 +515,7 @@ local function newProcessTable()
         pdata.threads={thr}
         pdata.trueuser = trueuser or pdata.trueuser
         dispatchThread(thr)
-        deleteThread(coroutine.running())
+        procDeleteThread(coroutine.running())
         while true do coroutine.yield() end
         -- marks the end of the thread
     end
