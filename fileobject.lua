@@ -341,6 +341,18 @@ function fileobjectmt:delete()
         error("cannot delete rootfs",2)
     end
 end
+function fileobjectmt:setPermissions(int)
+    assert(type(int) == "number","must be number")
+    int = math.floor(int)
+    local owner = _objectowner[self]
+    local pr = _objectprocesssystem[self]
+    if not pr then error("object became invalid",2) end
+    local process = _objectprocesssystem[self].processthreads[coroutine.running()]
+    if not process then error("not a process",2) end
+    if process.user == "root" or process.user == owner then
+        _objectpermission[self] = int % 4096
+    end
+end
 
 local function goTo(path,rootfs)
     if path:sub(1,1) == "/" then
