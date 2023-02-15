@@ -283,10 +283,11 @@ local function newProcessTable()
         if not nerr then error(err) end
     end
 
-    function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath,pubenv,privenv,trueuser)
+    function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath,pubenv,privenv,trueuser,groupuser)
         pid = pid or getnewPID()
         user = user or "root"
         trueuser = trueuser or user
+        groupuser = groupuser or nil
         local proc = {}
         setmetatable(proc,processmt)
         processtbl[pid] = proc
@@ -305,6 +306,7 @@ local function newProcessTable()
             argv=argv,
             user=user,
             trueuser=trueuser,
+            groupuser=groupuser,
             filepath=filepath,
             threads = {newThread(mainthreadrunner,init,proc)},
             _onwrite = onwrite,
@@ -412,6 +414,9 @@ local function newProcessTable()
     end
     function processmt:getOwningUser()
         return _processdata[self].trueuser
+    end
+    function processmt:getGroupUser()
+        return _processdata[self].groupuser
     end
     function processmt:getStdIn()
         return _processdata[self].stdin
@@ -590,6 +595,15 @@ local function newProcessTable()
                     return gname
                 end
             end
+        end,
+        getGroupsOfUser = function (user)
+            local t = {}
+            for gname,group in pairs(grouptbl) do
+                if group[user] then
+                    t[#t+1] = gname
+                end
+            end
+            return t
         end
     }
 end
