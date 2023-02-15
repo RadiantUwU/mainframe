@@ -112,6 +112,12 @@ end
 function genstreammt:getWriteEvent()
     return _streamevent[self]
 end
+function streammt:getType()
+    return type(_streamdata[self])
+end
+function genstreammt:getType()
+    return _streamdata[self]("t")
+end
 
 local function newStream(base)
     base = base or ""
@@ -163,6 +169,8 @@ local function newBasicStdin(func,allowWrite)
                 return backendstream:seek(a1)
             elseif op == "c" then
                 return backendstream:close()
+            elseif op == "t" then
+                return backendstream:getType()
             end
         end)
     else
@@ -190,6 +198,8 @@ local function newBasicStdin(func,allowWrite)
                 return backendstream:seek(a1)
             elseif op == "c" then
                 return backendstream:close()
+            elseif op == "t" then
+                return backendstream:getType()
             end
         end)
     end
@@ -207,6 +217,8 @@ local function newBasicStdout(func)
             return func(a1,1)
         elseif op == "a" then
             return 0
+        elseif op == "t" then
+            return "string"
         end
     end)
 end
@@ -234,6 +246,8 @@ local function cloneStream(oldstream,allowClosing) --> newstream
                 return oldstream:seek(a1)
             elseif op == "c" then
                 return oldstream:close()
+            elseif op == "t" then
+                return oldstream:getType()
             end
         end)
     else
@@ -250,6 +264,8 @@ local function cloneStream(oldstream,allowClosing) --> newstream
                 return oldstream:available()
             elseif op == "s" then
                 return oldstream:seek(a1)
+            elseif op == "t" then
+                return oldstream:getType()
             end
         end)
     end
@@ -276,6 +292,8 @@ local function newStreamWithData(tbl,key)
         elseif op == "c" then
             tbl[key] = backendstream:readAll()
             return backendstream:close()
+        elseif op == "t" then
+            return backendstream:getType()
         end
     end)
 end
