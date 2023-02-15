@@ -7,6 +7,7 @@ dirs = [
     "dispatchableEvent.lua",
     "mutex.lua",
     "stream.lua",
+    "pipe.lua",
     "process.lua",
     "fileobject.lua"
 ]
