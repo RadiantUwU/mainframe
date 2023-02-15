@@ -9,7 +9,10 @@ dirs = [
     "stream.lua",
     "pipe.lua",
     "process.lua",
-    "fileobject.lua"
+    "fileobject.lua",
+    "system.lua",
+    "executables.lua",
+    "returnedobject.lua"
 ]
 strs = ""
 for i in dirs:
