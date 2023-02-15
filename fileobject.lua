@@ -5,6 +5,8 @@ local _objectparent = setmetatable({},weaktbl)
 local _objectname = setmetatable({},weaktbl)
 local _objectpermission = setmetatable({},weaktbl)
 local _objectprocesssystem = setmetatable({},{__mode="kv"})
+local _filecontent = setmetatable({},weaktbl)
+local _objectisFolder = setmetatable({},weaktbl)
 fileobjectmt.__index = fileobjectmt
 --[[
     File permissions:
@@ -91,6 +93,26 @@ local function perminttostr(int)
         end
     end
     return s
+end
+local function permstrtoint(str)
+    local int = 0
+    for _,c in ipairs(into_chars(str)) do
+        int = int * 2
+        if c == "r" or c == "w" then
+            int = int + 1
+        elseif c == "x" then
+            int = int + 1
+            int = int * 2
+        elseif c == "S" or c == "T" then
+            int = int * 2
+            int = int + 1
+        elseif c == "s" or c == "t" then
+            int = int + 1
+            int = int * 2
+            int = int + 1
+        end
+    end
+    return int
 end
 
 function fileobjectmt:getWhereUserFitsPermission(user)
@@ -252,4 +274,101 @@ function fileobjectmt:rename(newname)
     else
         error("cannot rename rootfs",2)
     end
+end
+function fileobjectmt:isDirectory()
+    return _objectisFolder[self]
+end
+function fileobjectmt:read()
+    if not self:canRead() then error("access denied",2) end
+    if self:isDirectory() then
+        local dir = {}
+        for fname,f in pairs(_foldercontent[self]) do
+            dir[#dir+1] = fname
+        end
+        return dir
+    else
+        return newStream(_filecontent[self])
+    end
+end
+function fileobjectmt:write()
+    if not self:canWrite() then error("access denied",2) end
+    if self:isDirectory() then
+        error("invalid function used",2)
+    else
+        return newStreamWithData(_filecontent,self)
+    end
+end
+function fileobjectmt:execute(argv)
+    if not self:canExecute() then error("access denied",2) end
+    if self:isDirectory() then error("invalid function used",2)
+    else
+        local processtable = _objectprocesssystem[self]
+        local process = processtable.processthreads[coroutine.running()]
+        local func = _filecontent[self]
+        assert(type(func)=="function","invalid file provided")
+        local init,sigh = func()
+        assert(type(init)=="function" and type(sigh) == "table","invalid file provided")
+        local pdata = _processdata[process]
+        local perms = self:getPermissions()
+        local su,sg = perms:sub(3,3),perms:sub(6,6)
+        su = su == "s" or su == "S"
+        sg = sg == "s" or sg == "S"
+        if su then
+            pdata.user = self:getOwner()
+        end
+        if sg then
+            pdata.groupuser = self:getOwner()
+        end
+        process:exec(_objectname[self],init,sigh,argv,self:getFullPath())
+        -- thread killed
+    end
+end
+function fileobjectmt:access(what)
+    if not self:canExecute() then error("access denied",2) end
+    if not self:isDirectory() then error("invalid function used",2) end
+    return _foldercontent[self][what]
+end
+function fileobjectmt:delete()
+    local parent = self:getParent()
+    if parent then
+        if not parent:canWrite() then error("access denied.",2) end
+        local oldname = _objectname[self]
+        _foldercontent[parent][oldname] = nil
+        _objectprocesssystem[self] = nil --invalidate the object
+        _foldercontent[self] = nil
+        _filecontent[self] = nil
+    else
+        error("cannot delete rootfs",2)
+    end
+end
+
+local function goTo(path,rootfs)
+    if path:sub(1,1) == "/" then
+        return rootfs:to(path,true)
+    else
+        local processsystem = _objectprocesssystem[rootfs]
+        if not processsystem then error("object is invalid",2) end
+        local process = processsystem.processthreads[coroutine.running()]
+        if not process then error("not a process",2) end
+        local relPath = process:getEnv("workingDir")
+        if relPath then
+            local relative = rootfs:to(relPath,true)
+            if not relative then return end
+            return relative:to(path)
+        else
+            error("workingDir enviroment variable not found",2)
+        end
+    end
+end
+
+function fileobjectmt:move(topath)
+    local newfolder = goTo(topath,self:to("/"))
+    local oldfolder = _objectparent[self]
+    local name = _objectname[self]
+    if not oldfolder then error("cannot move rootfs",2) end
+    if not newfolder then error("not found",2) end
+    if not newfolder:canWrite() then error("access denied.",2) end
+    if not _objectparent[self]:canWrite() then error("access denied.") end
+    _foldercontent[oldfolder][name] = nil
+    _foldercontent[newfolder][name] = self
 end
