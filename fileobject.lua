@@ -155,6 +155,9 @@ function fileobjectmt:getPermissions(t)
         return perminttostr(_objectpermission[self] % 4096):sub(7,9)
     end
 end
+function fileobjectmt:permissionAsInteger()
+    return _objectpermission[self]
+end
 function fileobjectmt:getFullPath()
     local buf = ""
     local c = self
