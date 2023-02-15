@@ -520,6 +520,13 @@ local function newProcessTable()
         if processthreads[coroutine.running()] ~= self then error("cannot get private enviroment outside of process") end
         return _processdata[self].privenv[key]
     end
+    function processmt:getAPI()
+        return setmetatable({},{
+            __index=kernelAPI,
+            __metatable=false,
+            __newindex = function(t,k,v) error("frozen table") end
+        })
+    end
     local rootproc = setmetatable({},processmt)
     _processdata[rootproc] = {user="root"}
     local function runFuncAsRoot(func,...)
@@ -574,7 +581,15 @@ local function newProcessTable()
             return group == user
         end,
         isInGroup=function (group,user)
+            if not group then return false end
             return grouptbl[group][user] == true
+        end,
+        isInGroupWith=function (u1,u2)
+            for gname,group in pairs(grouptbl) do
+                if group[u1] and group[u2] then
+                    return gname
+                end
+            end
         end
     }
 end
