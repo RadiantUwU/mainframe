@@ -479,10 +479,20 @@ local function newProcessTable()
     function processmt:isMainThread()
         return _processdata[self].mainthread == coroutine.running()
     end
+    function processmt:giveUpGroupUser()
+        assert(processthreads[coroutine.running()] == self,"cannot give up permission outside of process")
+        local pdata = _processdata[self]
+        pdata.groupuser = nil
+    end
+    function processmt:giveUpSuperUser()
+        assert(processthreads[coroutine.running()] == self,"cannot give up permission outside of process")
+        local pdata = _processdata[self]
+        pdata.user = pdata.trueuser
+    end
     function processmt:fork(func)
         assert(processthreads[coroutine.running()] == self,"cannot fork outside of process")
         local pdata = _processdata[self]
-        local proc = processmt.new(pdata.name,func,pdata.sigh,self,pdata.user,nil,pdata.stdin,pdata.stdout,pdata.stderr,pdata.tty,pdata.argv,pdata.filepath,table_clone(pdata.pubenv),table_clone(pdata.privenv),pdata.trueuser)
+        local proc = processmt.new(pdata.name,func,pdata.sigh,self,pdata.user,nil,pdata.stdin,pdata.stdout,pdata.stderr,pdata.tty,pdata.argv,pdata.filepath,table_clone(pdata.pubenv),table_clone(pdata.privenv),pdata.trueuser,pdata.groupuser)
         local thr = coroutine.running()
         processthreads[thr] = proc
         proc:forkStreams()
