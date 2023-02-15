@@ -270,6 +270,7 @@ local function cloneStream(oldstream,allowClosing) --> newstream
         end)
     end
 end
+
 local function newStreamWithData(tbl,key)
     local backendstream = newStream(tbl[key])
     local closed = false
