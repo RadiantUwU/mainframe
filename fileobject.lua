@@ -1,4 +1,5 @@
 local fileobjectmt = {}
+local _foldercontent = setmetatable({},{__mode="k",__index=function(t,k) local tt = {} rawset(t,k,tt) return tt end})
 local _objectowner = setmetatable({},weaktbl)
 local _objectparent = setmetatable({},weaktbl)
 local _objectname = setmetatable({},weaktbl)
@@ -229,4 +230,26 @@ function fileobjectmt:isStickySet()
     local perms = self:getPermissions(self:getWhereCurrentFitsPermission())
     local s = perms:sub(3,3)
     return s == "t"
+end
+function fileobjectmt:changeOwner(newowner)
+    local owner = _objectowner[self]
+    local pr = _objectprocesssystem[self]
+    if not pr then error("object became invalid",2) end
+    local process = _objectprocesssystem[self].processthreads[coroutine.running()]
+    if not process then error("not a process",2) end
+    if process.user == "root" or process.user == owner then
+        _objectowner[self] = newowner
+    end
+end
+function fileobjectmt:rename(newname)
+    local parent = self:getParent()
+    if parent then
+        if not parent:canWrite() then error("access denied.",2) end
+        local oldname = _objectname[self]
+        _foldercontent[parent][oldname] = nil
+        _foldercontent[parent][newname] = self
+        _objectname[parent] = newname
+    else
+        error("cannot rename rootfs",2)
+    end
 end
