@@ -357,7 +357,7 @@ function fileobjectmt:setPermissions(int)
     end
 end
 
-local function goTo(path,rootfs)
+local function FSGoTo(path,rootfs)
     if path:sub(1,1) == "/" then
         return rootfs:to(path,true)
     else
@@ -377,7 +377,7 @@ local function goTo(path,rootfs)
 end
 
 function fileobjectmt:move(topath)
-    local newfolder = goTo(topath,self:to("/"))
+    local newfolder = FSGoTo(topath,self:to("/"))
     local oldfolder = _objectparent[self]
     local name = _objectname[self]
     if not oldfolder then error("cannot move rootfs",2) end
