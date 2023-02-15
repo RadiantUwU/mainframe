@@ -524,7 +524,7 @@ local function newProcessTable()
         pdata.mainthread = thr
         pdata.threads={thr}
         pdata.trueuser = trueuser or pdata.trueuser
-        dispatchThread(thr)
+        dispatchThread(thr,init,self)
         procDeleteThread(coroutine.running())
         while true do coroutine.yield() end
         -- marks the end of the thread
