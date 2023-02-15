@@ -83,7 +83,7 @@ function genstreammt:readAll()
     return _streamdata[self]("ra")
 end
 function streammt:available()
-    if _streamdata[self] == nil then return 0 end
+    if _streamdata[self] == nil then return -1 end
     return #_streamdata[self]
 end
 function genstreammt:available()
@@ -162,7 +162,7 @@ local function newBasicStdin(func,allowWrite)
             elseif op == "wa" then
                 return backendstream:writeAll(a1)
             elseif op == "a" then
-                if _streamdata[backendstream] == nil then return 0 end
+                if _streamdata[backendstream] == nil then return -1 end
                 return backendstream:available()
             elseif op == "s" then
                 if _streamdata[backendstream] == nil then error("stream is closed",3) end
@@ -189,7 +189,7 @@ local function newBasicStdin(func,allowWrite)
                 updateBuf()
                 return backendstream:readAll()
             elseif op == "a" then
-                if _streamdata[backendstream] == nil then return 0 end
+                if _streamdata[backendstream] == nil then return -1 end
                 updateBuf()
                 return backendstream:available()
             elseif op == "s" then
@@ -287,7 +287,7 @@ local function newStreamWithData(tbl,key)
             if closed then error("stream is closed",3) end
             return backendstream:writeAll(a1)
         elseif op == "a" then
-            if closed then return 0 end
+            if closed then return -1 end
             return backendstream:available()
         elseif op == "s" then
             if closed then error("stream is closed",3) end
