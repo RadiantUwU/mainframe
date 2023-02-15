@@ -10,6 +10,7 @@ dirs = [
     "pipe.lua",
     "process.lua",
     "fileobject.lua",
+    "filesystem.lua",
     "system.lua",
     "executables.lua",
     "returnedobject.lua"
