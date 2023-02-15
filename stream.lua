@@ -272,27 +272,32 @@ local function cloneStream(oldstream,allowClosing) --> newstream
 end
 local function newStreamWithData(tbl,key)
     local backendstream = newStream(tbl[key])
+    local closed = false
     return newGenStream(function(op,a1,a2)
         if op == "r" then
-            if _streamdata[backendstream] == nil then error("stream is closed",3) end
+            if closed then error("stream is closed",3) end
             return backendstream:read(a1,a2)
         elseif op == "ra" then
+            if closed then error("stream is closed",3) end
             return backendstream:readAll()
         elseif op == "w" then
-            if _streamdata[backendstream] == nil then error("stream is closed",3) end
+            if closed then error("stream is closed",3) end
             return backendstream:write(a1,a2)
         elseif op == "wa" then
+            if closed then error("stream is closed",3) end
             return backendstream:writeAll(a1)
         elseif op == "a" then
-            if _streamdata[backendstream] == nil then return 0 end
+            if closed then return 0 end
             return backendstream:available()
         elseif op == "s" then
-            if _streamdata[backendstream] == nil then error("stream is closed",3) end
+            if closed then error("stream is closed",3) end
             return backendstream:seek(a1)
         elseif op == "c" then
-            tbl[key] = backendstream:readAll()
+            if not closed then tbl[key] = backendstream:readAll() end
+            closed = true
             return backendstream:close()
         elseif op == "t" then
+            if closed then return "nil" end
             return backendstream:getType()
         end
     end)
