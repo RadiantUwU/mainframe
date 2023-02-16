@@ -1,4 +1,5 @@
 local fileobjectmt = {}
+local streamobjectmt = {}
 local _foldercontent = setmetatable({},{__mode="k",__index=function(t,k) local tt = {} rawset(t,k,tt) return tt end})
 local _objectowner = setmetatable({},weaktbl)
 local _objectparent = setmetatable({},weaktbl)
@@ -7,6 +8,7 @@ local _objectpermission = setmetatable({},weaktbl)
 local _objectprocesssystem = setmetatable({},{__mode="kv"})
 local _filecontent = setmetatable({},weaktbl)
 local _objectisFolder = setmetatable({},weaktbl)
+local _streamfuncs = setmetatable({},weaktbl)
 fileobjectmt.__index = fileobjectmt
 --[[
     File permissions:
@@ -386,4 +388,10 @@ function fileobjectmt:move(topath)
     if not _objectparent[self]:canWrite() then error("access denied.") end
     _foldercontent[oldfolder][name] = nil
     _foldercontent[newfolder][name] = self
+end
+
+function fileobjectmt:deleteObject(file)
+    if not self:canWrite() then error("access denied",2) end
+    if not self:isDirectory() then error("inalid function used",2) end
+    _foldercontent[self][file] = nil
 end
