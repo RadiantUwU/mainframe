@@ -72,7 +72,7 @@ local function newFileSystem(processSystem)
         if not folder:canWrite() then error("access denied.",2) end
         return _newFile(name,folder,process.user,permissions,content)
     end
-    local function _newStreamFile(name,parent,owner,permissionstring,func)
+    local function newStreamFile(name,parent,owner,permissionstring,func)
         local object = setmetatable({},streamobjectmt)
         _objectname[object] = name
         _objectparent[object] = parent
@@ -86,7 +86,7 @@ local function newFileSystem(processSystem)
         end
         return object
     end
-    local function _newStreamFolder(name,parent,owner,permissionstring,func)
+    local function newStreamFolder(name,parent,owner,permissionstring,func)
         local object = setmetatable({},streamobjectmt)
         _objectname[object] = name
         _objectparent[object] = parent
@@ -94,7 +94,9 @@ local function newFileSystem(processSystem)
         _objectpermission[object] = permstrtoint(permissionstring)
         _objectisFolder[object] = true
         _objectprocesssystem[object] = processSystem
-        _foldercontent[object] = {}
+        _foldercontent[object] = setmetatable({},{__newindex=function (_,__,v)
+            return func("w",object,v)
+        end})
         _streamfuncs[object] = func
         if parent then
             _foldercontent[parent][name] = object
@@ -110,6 +112,8 @@ local function newFileSystem(processSystem)
         newFile=ProcNewFile,
         _newFolder=newFolder,
         _newFile=newFile,
+        _newStreamFile=newStreamFile,
+        _newStreamFolder=newStreamFolder,
         getPath=function (path)
             return FSGoTo(path,rootfs)
         end
