@@ -298,6 +298,7 @@ local function newProcessTable()
         user = user or "root"
         trueuser = trueuser or user
         groupuser = groupuser or nil
+        parent = parent or processtbl[1]
         local proc = {}
         setmetatable(proc,processmt)
         processtbl[pid] = proc
@@ -390,12 +391,14 @@ local function newProcessTable()
                 if pdata.sigh[signal] ~= nil then
                     local thr = newThread(pdata.sigh[signal],self)
                     processthreads[signal] = thr
+                    dispatchThread(thr,self)
                     -- signal handled
                 end
             end
         elseif pdata.sigh[signal] ~= nil and not isUnhandledSignal(signal) then
             local thr = newThread(pdata.sigh[signal],self)
             processthreads[signal] = thr
+            dispatchThread(thr,self)
             -- signal handled
         elseif signal == Signal.SIGSTOP then
             if self.stat ~= "R" then return end
