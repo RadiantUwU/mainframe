@@ -1,5 +1,6 @@
 local fileobjectmt = {}
-local streamobjectmt = setmetatable({},{__index=fileobjectmt})
+local streamobjectmt = setmetatable({},{__index=fileobjectmt}) -- base
+local symlinkobjectmt = setmetatable({},{__index=fileobjectmt}) -- no base
 local _foldercontent = setmetatable({},{__mode="k",__index=function(t,k) local tt = {} rawset(t,k,tt) return tt end})
 local _objectowner = setmetatable({},weaktbl)
 local _objectparent = setmetatable({},weaktbl)
@@ -9,8 +10,10 @@ local _objectprocesssystem = setmetatable({},{__mode="kv"})
 local _filecontent = setmetatable({},weaktbl)
 local _objectisFolder = setmetatable({},weaktbl)
 local _streamfuncs = setmetatable({},weaktbl)
+local _symlinkobject = setmetatable({},weaktbl)
 fileobjectmt.__index = fileobjectmt
 streamobjectmt.__index = streamobjectmt
+symlinkobjectmt.__index = symlinkobjectmt
 --[[
     File permissions:
     File permissions look something like
@@ -419,4 +422,39 @@ function streamobjectmt:access(what) -- override
     if not self:isDirectory() then error("invalid function used",2) end
     local f = _streamfuncs[self]
     return f("a",self,what)
+end
+
+function symlinkobjectmt:getWhereUserFitsPermission(user)
+    return _symlinkobject[self]:getWhereUserFitsPermission(user)
+end
+function symlinkobjectmt:getWhereCurrentFitsPermission()
+    return _symlinkobject[self]:getWhereCurrentFitsPermission()
+end
+function symlinkobjectmt:getPermissions(t)
+    return _symlinkobject[self]:getPermissions(t)
+end
+function symlinkobjectmt:permissionAsInteger()
+    return _objectpermission[_symlinkobject[self]]
+end
+function symlinkobjectmt:getOwner()
+    return _objectowner[_symlinkobject[self]]
+end
+function symlinkobjectmt:changeOwner(newowner)
+    return _symlinkobject[self]:changeOwner(newowner)
+end
+function symlinkobjectmt:isDirectory() return _symlinkobject[self]:isDirectory() end
+function symlinkobjectmt:read()
+    return _symlinkobject[self]:read()
+end
+function symlinkobjectmt:write()
+    return _symlinkobject[self]:write()
+end
+function symlinkobjectmt:execute(argv)
+    return _symlinkobject[self]:execute(argv)
+end
+function symlinkobjectmt:access(what)
+    return _symlinkobject[self]:access(what)
+end
+function fileobjectmt:setPermissions(int)
+    return _symlinkobject[self]:setPermissions(int)
 end
