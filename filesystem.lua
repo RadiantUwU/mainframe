@@ -76,6 +76,9 @@ local function newFileSystem(processSystem)
         newFolder=ProcNewFolder,
         newFile=ProcNewFile,
         _newFolder=newFolder,
-        _newFile=newFile
+        _newFile=newFile,
+        getPath=function (path)
+            return FSGoTo(path,rootfs)
+        end
     }
 end
