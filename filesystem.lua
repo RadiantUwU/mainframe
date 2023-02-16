@@ -101,6 +101,10 @@ local function newFileSystem(processSystem)
         end
         return object
     end
+    --[[
+        DISCLAIMER: When read/written, stream files will return a stream, just like regular files
+        When executed, it will run process:exec or error
+    ]]--
     return rootfs,{
         newFolder=ProcNewFolder,
         newFile=ProcNewFile,
