@@ -107,6 +107,19 @@ local function newFileSystem(processSystem)
         DISCLAIMER: When read/written, stream files will return a stream, just like regular files
         When executed, it will run process:exec or error
     ]]--
+    local function newSymlink(name,parent,o)
+        local object = setmetatable({},symlinkobjectmt)
+        _symlinkobject[object] = o
+        _objectname[object] = name
+        _objectparent[object] = parent
+        _foldercontent[object] = setmetatable({},{__newindex=function (_,k,v)
+            _foldercontent[o][k] = v
+        end})
+        if parent then
+            _foldercontent[parent][name] = object
+        end
+        return object
+    end
     return rootfs,{
         newFolder=ProcNewFolder,
         newFile=ProcNewFile,
@@ -114,6 +127,7 @@ local function newFileSystem(processSystem)
         _newFile=newFile,
         _newStreamFile=newStreamFile,
         _newStreamFolder=newStreamFolder,
+        _newSymlink=newSymlink,
         getPath=function (path)
             return FSGoTo(path,rootfs)
         end
