@@ -1,5 +1,5 @@
 local fileobjectmt = {}
-local streamobjectmt = {}
+local streamobjectmt = setmetatable({},{__index=fileobjectmt})
 local _foldercontent = setmetatable({},{__mode="k",__index=function(t,k) local tt = {} rawset(t,k,tt) return tt end})
 local _objectowner = setmetatable({},weaktbl)
 local _objectparent = setmetatable({},weaktbl)
@@ -10,6 +10,7 @@ local _filecontent = setmetatable({},weaktbl)
 local _objectisFolder = setmetatable({},weaktbl)
 local _streamfuncs = setmetatable({},weaktbl)
 fileobjectmt.__index = fileobjectmt
+streamobjectmt.__index = streamobjectmt
 --[[
     File permissions:
     File permissions look something like
@@ -394,4 +395,28 @@ function fileobjectmt:deleteObject(file)
     if not self:canWrite() then error("access denied",2) end
     if not self:isDirectory() then error("inalid function used",2) end
     _foldercontent[self][file] = nil
+end
+
+function streamobjectmt:read() -- override
+    if not self:canRead() then error("access denied",2) end
+    local f = _streamfuncs[self]
+    return f("r",self)
+end
+function streamobjectmt:write() -- override
+    if not self:canWrite() then error("access denied",2) end
+    if self:isDirectory() then error("invalid function used",2) end
+    local f = _streamfuncs[self]
+    return f("w",self)
+end
+function streamobjectmt:execute(argv) -- override
+    if not self:canExecute() then error("access denied",2) end
+    if self:isDirectory() then error("invalid function used",2) end
+    local f = _streamfuncs[self]
+    return f("x",self,argv)
+end
+function streamobjectmt:access(what) -- override
+    if not self:canExecute() then error("access denied",2) end
+    if not self:isDirectory() then error("invalid function used",2) end
+    local f = _streamfuncs[self]
+    return f("a",self,what)
 end
