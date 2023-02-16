@@ -251,21 +251,31 @@ local function cloneStream(oldstream,allowClosing) --> newstream
             end
         end)
     else
+        local closed = false
         return newGenStream(function(op,a1,a2)
             if op == "r" then
+                if closed then error("stream is closed",2) end
                 return oldstream:read(a1,a2)
             elseif op == "ra" then
+                if closed then error("stream is closed",2) end
                 return oldstream:readAll()
             elseif op == "w" then
+                if closed then error("stream is closed",2) end
                 return oldstream:write(a1,a2)
             elseif op == "wa" then
+                if closed then error("stream is closed",2) end
                 return oldstream:writeAll(a1)
             elseif op == "a" then
+                if closed then return -1 end
                 return oldstream:available()
             elseif op == "s" then
+                if closed then error("stream is closed",2) end
                 return oldstream:seek(a1)
             elseif op == "t" then
+                if closed then return "nil" end
                 return oldstream:getType()
+            elseif op == "c" then
+                closed = true
             end
         end)
     end
