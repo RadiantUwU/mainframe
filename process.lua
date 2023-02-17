@@ -255,6 +255,33 @@ local function newProcessTable()
         pdata.retval = signal
         pdata.returntype = 2
     end
+    local function exitProcess(proc,ret)
+        local pdata = _processdata[proc]
+        terminateyieldproc(proc)
+        for _,thr in ipairs(pdata.threads) do
+            procDeleteThread(thr)
+        end
+        -- this process has been killed
+        pdata.stat = "Z"
+        pdata.threads = {}
+        pdata.mainthread = nil
+        if pdata.stdin then
+            pdata.stdinhook:Disconnect()
+            pdata.stdin:close()
+        end if pdata.stdout then
+            pdata.stdout:close()
+        end if pdata.stderr then
+            pdata.stderr:close()
+        end
+        local parent = pdata.parent
+        for _,chld in ipairs(pdata.children) do
+            chld.parent = parent
+            table.insert(parent.children,chld)
+        end
+        pdata.children = {}
+        pdata.retval = ret
+        pdata.returntype = 1
+    end
     local function mainthreadrunner(func,proc)
         local pdata = _processdata[proc]
         if pdata.forked then
@@ -555,6 +582,30 @@ local function newProcessTable()
             __newindex = function(t,k,v) error("frozen table") end
         })
     end
+    function processmt:changeUser(newuser)
+        assert(processthreads[coroutine.running()] == self,"cannot change user outside of process")
+        local pdata = _processdata[self]
+        if pdata.user == "root" then
+            pdata.user = newuser
+            -- user successfully changed!
+        else
+            error("access denied.",2)
+        end
+    end
+    function processmt:changeParent(pid)
+        assert(processthreads[coroutine.running()] == self,"cannot change parent outside of process")
+        local pdata = _processdata[self]
+        local pproc = processtbl[pid] or processtbl[1]
+        if pdata.parent then
+            local ppdata = _processdata[pdata.parent]
+            table.remove(ppdata.children,rawFind(ppdata.children,self))
+        end
+        pdata.parent = pproc
+        if pdata.parent then
+            local ppdata = _processdata[pdata.parent]
+            table.insert(ppdata.children,self)
+        end
+    end
     local rootproc = setmetatable({},processmt)
     _processdata[rootproc] = {user="root"}
     local function runFuncAsRoot(func,...)
@@ -627,6 +678,7 @@ local function newProcessTable()
                 end
             end
             return t
-        end
+        end,
+        exitProcess= exitProcess
     }
 end

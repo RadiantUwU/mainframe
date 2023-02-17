@@ -192,5 +192,93 @@ local function newSystem()
                 else error("Operation not permitted.",2) end
             end)
         end
+    },{
+        newFolder=du.ProcNewFolder,
+        newFile=du.ProcNewFile,
+        yield=pr.yield,
+        exit=function(retcode)
+            retcode = retcode or 0
+            local proc = pr.processthreads[self]
+            assert(proc ~= nil, "proc is nil")
+            pr.exitProcess(proc,retcode)
+            while true do coroutine.yield() end
+        end,
+        abort=function()
+            local proc = pr.processthreads[self]
+            assert(proc ~= nil, "proc is nil")
+            proc:sendSignal(Signals.SIGABRT)
+            if proc:getStat() == "Z" then while true do coroutine.yield() end end
+        end,
+        open=function(path,mode)
+            mode = mode or "r"
+            local f = FSGoTo(path)
+            if not f then
+                error("path not found",2)
+            end
+            assert(not f:isDirectory(), "is a directory")
+            if mode == "r" then
+                return f:read()
+            elseif mode == "w" then
+                local s = f:write()
+                s:readAll() -- wipe file
+                return s
+            elseif mode == "rw" then
+                return f:write()
+            elseif mode == "a" then
+                return f:write()
+            else
+                error("invalid mode specified",2)
+            end
+        end,
+        getinode=function(path)
+            return FSGoTo(path)
+        end,
+        groupmgr=function(o,arg,arg2)
+            local user = _processdata[pr.processthreads[coroutine.running()]].user
+            if o == "ng" then
+                if user == "root" or user == arg then
+                    pr.addGroup(arg)
+                else error("access denied.",2)
+                end
+            elseif o == "dg" then
+                if user == "root" or user == arg then
+                    pr.delGroup(arg)
+                else error("access denied.",2)
+                end
+            elseif o == "au" then
+                if user == "root" or user == arg then
+                    pr.addUserToGroup(arg,arg2)
+                else error("access denied.",2)
+                end
+            elseif o == "au" then
+                if user == "root" or user == arg then
+                    pr.addUserToGroup(arg,arg2)
+                else error("access denied.",2)
+                end
+            elseif o == "ru" then
+                if user == "root" or user == arg then
+                    pr.removeUserFromGroup(arg,arg2)
+                else error("access denied.",2)
+                end
+            elseif o == "io" then
+                return pr.isOwnerOfGroup(arg,arg2)
+            elseif o == "co" then
+                return pr.isOwnerOfGroup(arg,user)
+            elseif o == "iu" then
+                return pr.isInGroup(arg,arg2)
+            elseif o == "cu" then
+                return pr.isInGroup(arg,user)
+            elseif o == "gu" then
+                return pr.getGroupsOfUser(arg)
+            elseif o == "gc" then
+                return pr.getGroupsOfUser(user)
+            elseif o == "su" then
+                return pr.isInGroupWith(arg,arg2)
+            elseif o == "sc" then
+                return pr.isInGroupWith(arg,user)
+            else
+                error("invalid operation",2)
+            end
+        end
     }
 end
