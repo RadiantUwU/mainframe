@@ -231,7 +231,7 @@ end
 
 local function cloneStream(oldstream,allowClosing) --> newstream
     if allowClosing then
-        return newGenStream(function(op,a1,a2)
+        local s = newGenStream(function(op,a1,a2)
             if op == "r" then
                 return oldstream:read(a1,a2)
             elseif op == "ra" then
@@ -250,9 +250,11 @@ local function cloneStream(oldstream,allowClosing) --> newstream
                 return oldstream:getType()
             end
         end)
+        _streamevent[s] = _streamevent[oldstream]
+        return s
     else
         local closed = false
-        return newGenStream(function(op,a1,a2)
+        local s = newGenStream(function(op,a1,a2)
             if op == "r" then
                 if closed then error("stream is closed",2) end
                 return oldstream:read(a1,a2)
@@ -278,6 +280,8 @@ local function cloneStream(oldstream,allowClosing) --> newstream
                 closed = true
             end
         end)
+        _streamevent[s] = _streamevent[oldstream]
+        return s
     end
 end
 
