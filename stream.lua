@@ -230,6 +230,7 @@ local function newBasicStderr(func)
 end
 
 local function cloneStream(oldstream,allowClosing) --> newstream
+    if not oldstream then return nil end
     if allowClosing then
         local s = newGenStream(function(op,a1,a2)
             if op == "r" then
