@@ -130,69 +130,7 @@ local function newSystem()
     procdir = newStreamFolder("proc",rootfs,"root","r-xr-xr-x",procdirf)
     newSymlink("bin",rootfs,bindir)
     newSymlink("sbin",rootfs,sbindir)
-
-    return {
-        bindir=bindir,
-        devdir=devdir,
-        etcdir=etcdir,
-        homedir=homedir,
-        mntdir=mntdir,
-        procdir=procdir,
-        rundir=rundir,
-        tmpdir=tmpdir,
-
-        pr=pr,
-        rootfs=rootfs,
-        du=du,
-
-        populateDevFolder = function()
-            newStreamFile("null",devdir,"root","rw-rw-rw-",function(op,a1)
-                if op == "r" then
-                    return newBasicStdin(function() return "" end,false)
-                elseif op == "w" then
-                    return newBasicStdin(function() return "" end,false)
-                else error("Operation not permitted.",2) end
-            end)
-            newStreamFile("zero",devdir,"root","r--r--r--",function(op,a1)
-                if op == "r" then
-                    return newBasicStdin(function() return string.char(0) end,false)
-                else error("Operation not permitted.",2) end
-            end)
-            newStreamFile("urandom",devdir,"root","r--r--r--",function(op,a1)
-                if op == "r" then
-                    return newBasicStdin(function() return string.char(math.random(0,255)) end,false)
-                else error("Operation not permitted.",2) end
-            end)
-            newStreamFile("stdin",devdir,"root","r--r--r--",function(op,a1)
-                if op == "r" then
-                    local proc = pr.processthreads[coroutine.running()]
-                    local pdata = _processdata[proc]
-                    return newBasicStdin(function() if pdata.stdin then return pdata.stdin:read(1) else return "" end end)
-                else error("Operation not permitted.",2) end
-            end)
-            newStreamFile("stdout",devdir,"root","-w--w--w-",function(op,a1)
-                if op == "w" then
-                    local proc = pr.processthreads[coroutine.running()]
-                    local pdata = _processdata[proc]
-                    return cloneStream(pdata.stdout,false)
-                else error("Operation not permitted.",2) end
-            end)
-            newStreamFile("stderr",devdir,"root","-w--w--w-",function(op,a1)
-                if op == "w" then
-                    local proc = pr.processthreads[coroutine.running()]
-                    local pdata = _processdata[proc]
-                    return cloneStream(pdata.stderr,false)
-                else error("Operation not permitted.",2) end
-            end)
-            newStreamFile("tty",devdir,"root","rw-rw-rw-",function(op,a1)
-                if op == "r" or op == "w" then
-                    local proc = pr.processthreads[coroutine.running()]
-                    local pdata = _processdata[proc]
-                    return pdata.tty
-                else error("Operation not permitted.",2) end
-            end)
-        end
-    },{
+    local publicapi = {
         newFolder=du.ProcNewFolder,
         newFile=du.ProcNewFile,
         yield=pr.yield,
@@ -279,6 +217,71 @@ local function newSystem()
             else
                 error("invalid operation",2)
             end
-        end
+        end,
+        newStream=newStream,
+        newGenStream=newGenStream
     }
+    pr.setKernelAPI(publicapi)
+    return {
+        bindir=bindir,
+        devdir=devdir,
+        etcdir=etcdir,
+        homedir=homedir,
+        mntdir=mntdir,
+        procdir=procdir,
+        rundir=rundir,
+        tmpdir=tmpdir,
+
+        pr=pr,
+        rootfs=rootfs,
+        du=du,
+
+        populateDevFolder = function()
+            newStreamFile("null",devdir,"root","rw-rw-rw-",function(op,a1)
+                if op == "r" then
+                    return newBasicStdin(function() return "" end,false)
+                elseif op == "w" then
+                    return newBasicStdin(function() return "" end,false)
+                else error("Operation not permitted.",2) end
+            end)
+            newStreamFile("zero",devdir,"root","r--r--r--",function(op,a1)
+                if op == "r" then
+                    return newBasicStdin(function() return string.char(0) end,false)
+                else error("Operation not permitted.",2) end
+            end)
+            newStreamFile("urandom",devdir,"root","r--r--r--",function(op,a1)
+                if op == "r" then
+                    return newBasicStdin(function() return string.char(math.random(0,255)) end,false)
+                else error("Operation not permitted.",2) end
+            end)
+            newStreamFile("stdin",devdir,"root","r--r--r--",function(op,a1)
+                if op == "r" then
+                    local proc = pr.processthreads[coroutine.running()]
+                    local pdata = _processdata[proc]
+                    return newBasicStdin(function() if pdata.stdin then return pdata.stdin:read(1) else return "" end end)
+                else error("Operation not permitted.",2) end
+            end)
+            newStreamFile("stdout",devdir,"root","-w--w--w-",function(op,a1)
+                if op == "w" then
+                    local proc = pr.processthreads[coroutine.running()]
+                    local pdata = _processdata[proc]
+                    return cloneStream(pdata.stdout,false)
+                else error("Operation not permitted.",2) end
+            end)
+            newStreamFile("stderr",devdir,"root","-w--w--w-",function(op,a1)
+                if op == "w" then
+                    local proc = pr.processthreads[coroutine.running()]
+                    local pdata = _processdata[proc]
+                    return cloneStream(pdata.stderr,false)
+                else error("Operation not permitted.",2) end
+            end)
+            newStreamFile("tty",devdir,"root","rw-rw-rw-",function(op,a1)
+                if op == "r" or op == "w" then
+                    local proc = pr.processthreads[coroutine.running()]
+                    local pdata = _processdata[proc]
+                    return pdata.tty
+                else error("Operation not permitted.",2) end
+            end)
+        end
+    },publicapi
 end
