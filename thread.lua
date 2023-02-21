@@ -3,6 +3,7 @@ if isRoblox then isRoblox = true else isRoblox = false end
 local newThread
 local deleteThread
 local dispatchThread
+local sleepWait
 if isRoblox then
     function newThread(func, ...)
         return task.defer(func,...) -- do not immediately spawn it!
@@ -29,6 +30,9 @@ if isRoblox then
     function dispatchThread(thr,...)
         --already dispatching on next resumption cycle
     end
+    function sleepWait(sec)
+        task.wait(sec)
+    end
 else --legacy support
     function newThread(func, ...)
         local thr = coroutine.create(func)
@@ -39,5 +43,10 @@ else --legacy support
     end
     function dispatchThread(thr,...)
         coroutine.resume(thr,...)
+    end
+    require "socket"
+
+    function sleepWait(sec)
+        socket.select(nil, nil, sec)
     end
 end

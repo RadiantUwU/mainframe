@@ -575,6 +575,15 @@ local function newProcessTable()
         if processthreads[coroutine.running()] ~= self then error("cannot get private enviroment outside of process") end
         return _processdata[self].privenv[key]
     end
+    function processmt:clearEnv()
+        local sendingproc = processthreads[coroutine.running()]
+        if not hasaccessover(self,sendingproc) then error("access denied") end
+        _processdata[self].pubenv = {}
+    end
+    function processmt:clearPrivateEnv()
+        if processthreads[coroutine.running()] ~= self then error("cannot set private enviroment outside of process") end
+        _processdata[self].privenv = {}
+    end
     function processmt:getAPI()
         return setmetatable({},{
             __index=kernelAPI,

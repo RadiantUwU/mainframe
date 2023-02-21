@@ -5,6 +5,7 @@ local function newSystem()
     local newStreamFile = du._newStreamFile
     local newStreamFolder = du._newStreamFolder
     local newSymlink = du._newSymLink
+    local powerdownhooks = {}
     local rootrw = "rwxr-xr-x"
     local usrdir = newFolder("usr",rootfs,"root",rootrw)
     local bindir = newFolder("bin",usrdir,"root",rootrw)
@@ -15,6 +16,9 @@ local function newSystem()
     local mntdir = newFolder("mnt",rootfs,"root",rootrw)
     local rundir = newFolder("run",rootfs,"root",rootrw)
     local tmpdir = newFolder("tmp",rootfs,"root",rootrw)
+    local sysrqtriggerfunc=function(c)
+        error("sysrq not set.",4)
+    end
     local procdir
     local function newprocdir(proc)
         local pdata = _processdata[proc]
@@ -105,7 +109,7 @@ local function newSystem()
     end
     local function procdirf(op,a1,a2)
         if op == "r" then
-            local t = {"self"}
+            local t = {"self","sysrq-trigger"}
             for pid,proc in pairs(pr.processtbl) do
                 t[#t+1] = tostring(pid)
             end
@@ -114,6 +118,27 @@ local function newSystem()
         elseif op == "a" then
             if a1 == "self" then
                 return newprocdir(pr.processthreads[coroutine.running()])
+            elseif a1 == "sysrq-trigger" then
+                local object = setmetatable({},streamobjectmt)
+                _objectname[object] = "sysrq-trigger"
+                _objectparent[object] = procdir
+                _objectowner[object] = "root"
+                _objectpermission[object] = permstrtoint("-w-------")
+                _objectisFolder[object] = false
+                _objectprocesssystem[object] = pr
+                _streamfuncs[object] = function(k,self,args)
+                    if k == "r" then
+                        return newStream()
+                    elseif k == "w" then
+                        return newBasicStdout(function(s,a1)
+                            for _,c in ipairs(into_chars(s)) do
+                                sysrqtriggerfunc(c)
+                            end
+                        end)
+                    else error("Operation not permitted.",2)
+                    end
+                end
+                return object
             else
                 local p = tonumber(a1)
                 if not p then
@@ -282,6 +307,32 @@ local function newSystem()
                     return pdata.tty
                 else error("Operation not permitted.",2) end
             end)
+        end,
+
+        addpowerdownhook=function(f)
+            table.insert(powerdownhooks,f)
+        end,
+        shutdown=function(ty,wait)
+            if ty == "poweroff" or ty == "halt" or ty == "reboot" then
+                pr.terminate()
+                for _,f in ipairs(powerdownhooks) do
+                    coroutine.wrap(f)(ty)
+                end
+            elseif ty == "force" then
+                wait = wait or 3
+                for pid,proc in ipairs(pr.processtbl) do
+                    pr.runFuncAsRoot(proc.sendSignal,proc,Signals.SIGPWR)
+                end
+                sleepWait(wait)
+                pr.terminate()
+                for _,f in ipairs(powerdownhooks) do
+                    coroutine.wrap(f)(ty)
+                end
+            else error("operation not recognized",2)
+            end
+        end,
+        setSysrqTrigger=function (func)
+            sysrqtriggerfunc = func
         end
     },publicapi
 end
