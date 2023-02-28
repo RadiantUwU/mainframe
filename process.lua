@@ -284,12 +284,12 @@ local function newProcessTable()
     end
     local function mainthreadrunner(func,proc)
         local pdata = _processdata[proc]
-        if pdata.forked then
-            pdata.retval = func(proc,pdata.forked)
+        local success = pcall(function() if pdata.forked then
+            pdata.retval = func(proc,pdata.forked) or 0
         else
-            pdata.retval = func(proc,-1)
-        end
-        pdata.returntype = 1
+            pdata.retval = func(proc,-1) or 0
+        end end)
+        if success then pdata.returntype = 1 else pdata.returntype = 2 pdata.retval = Signals.SIGABRT end
         terminateyieldproc(proc)
         for _,thr in ipairs(pdata.threads) do
             procDeleteThread(thr)
@@ -523,12 +523,12 @@ local function newProcessTable()
         assert(processthreads[coroutine.running()] == self,"cannot fork outside of process")
         local pdata = _processdata[self]
         local proc = processmt.new(pdata.name,func,pdata.sigh,self,pdata.user,nil,pdata.stdin,pdata.stdout,pdata.stderr,pdata.tty,pdata.argv,pdata.filepath,table_clone(pdata.pubenv),table_clone(pdata.privenv),pdata.trueuser,pdata.groupuser)
+        local ppdata = _processdata[proc]
+        ppdata.forked = true
         local thr = coroutine.running()
         processthreads[thr] = proc
         proc:forkStreams()
         processthreads[thr] = self
-        local ppdata = _processdata[proc]
-        ppdata.forked = true
         return func(self,proc.pid)
     end
     function processmt:exec(name,init,sigh,argv,filepath,trueuser)

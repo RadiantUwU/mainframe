@@ -161,13 +161,13 @@ local function newSystem()
         yield=pr.yield,
         exit=function(retcode)
             retcode = retcode or 0
-            local proc = pr.processthreads[self]
+            local proc = pr.processthreads[coroutine.running()]
             assert(proc ~= nil, "proc is nil")
             pr.exitProcess(proc,retcode)
             while true do coroutine.yield() end
         end,
         abort=function()
-            local proc = pr.processthreads[self]
+            local proc = pr.processthreads[coroutine.running()]
             assert(proc ~= nil, "proc is nil")
             proc:sendSignal(Signals.SIGABRT)
             if proc:getStat() == "Z" then while true do coroutine.yield() end end
@@ -244,7 +244,20 @@ local function newSystem()
             end
         end,
         newStream=newStream,
-        newGenStream=newGenStream
+        newGenStream=newGenStream,
+        exec=function(path,...)
+            local f = FSGoTo(path)
+            if not f then
+                error("path not found",2)
+            end
+            assert(not f:isDirectory(), "is a directory")
+            local args = {...}
+            f:execute(args)
+        end,
+        terminate=function()
+            deleteThread(coroutine.running())
+            while true do coroutine.yield() end
+        end
     }
     pr.setKernelAPI(publicapi)
     return {
@@ -266,7 +279,12 @@ local function newSystem()
                 if op == "r" then
                     return newBasicStdin(function() return "" end,false)
                 elseif op == "w" then
-                    return newBasicStdin(function() return "" end,false)
+                    return newBasicStdout(function(s,pos) 
+                        local proc = pr.processthreads[coroutine.running()]
+                        if proc then
+                            proc:sendSignal(Signals.SIGXFSZ)
+                        end
+                    end)
                 else error("Operation not permitted.",2) end
             end)
             newStreamFile("zero",devdir,"root","r--r--r--",function(op,a1)
