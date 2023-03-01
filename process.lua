@@ -30,7 +30,8 @@ local SignalReversed = {
     "SIGWINCH",  -- Unused
     "SIGIO",     -- IO stream available
     "SIGPWR",    -- Signal power loss
-    "SIGUNUSED"  -- Unused
+    "SIGUNUSED", -- Unused
+    "SIGPIPEOPEN"
 }
 local Signal = {}
 for v,signame in ipairs(SignalReversed) do
@@ -151,7 +152,8 @@ local function newProcessTable()
 
     end
     local function suspendthreads(proc)
-        proc.stat = "T"
+        local pdata = _processdata[proc]
+        pdata.stat = "T"
         yieldmutex:lock()
         while true do
             local found = false
@@ -168,7 +170,8 @@ local function newProcessTable()
         yieldmutex:unlock()
     end
     local function continuethreads(proc)
-        proc.stat = "R"
+        local pdata = _processdata[proc]
+        pdata.stat = "R"
         yieldmutex:lock()
         while true do
             local found = false
@@ -417,14 +420,14 @@ local function newProcessTable()
                 continuethreads(self) -- resume process at next resumption cycle
                 if pdata.sigh[signal] ~= nil then
                     local thr = newThread(pdata.sigh[signal],self)
-                    processthreads[signal] = thr
+                    processthreads[thr] = self
                     dispatchThread(thr,self)
                     -- signal handled
                 end
             end
         elseif pdata.sigh[signal] ~= nil and not isUnhandledSignal(signal) then
             local thr = newThread(pdata.sigh[signal],self)
-            processthreads[signal] = thr
+            processthreads[thr] = self
             dispatchThread(thr,self)
             -- signal handled
         elseif signal == Signal.SIGSTOP then
@@ -614,6 +617,18 @@ local function newProcessTable()
             local ppdata = _processdata[pdata.parent]
             table.insert(ppdata.children,self)
         end
+    end
+    function processmt:pipe()
+        local pdata = _processdata[self]
+        local cp = processthreads[coroutine.running()]
+        assert(cp,"no process found")
+        local pipe1,pipe2 = newPipe({processthreads=processthreads})
+        local pipoph = pdata.sigh[Signal.SIGPIPEOPEN]
+        assert(pipoph,"process does not support piping")
+        local thr = newThread(pipoph,self,cp,pipe1)
+        processthreads[thr] = self
+        dispatchThread(thr,self,cp,pipe1)
+        return pipe2
     end
     local rootproc = setmetatable({},processmt)
     _processdata[rootproc] = {user="root"}
