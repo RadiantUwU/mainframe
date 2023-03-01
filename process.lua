@@ -323,6 +323,20 @@ local function newProcessTable()
         table.remove(pdata.threads,rawFind(pdata.threads,coroutine.running()))
         if not nerr then error(err) end
     end
+    function processmt:collect()
+        local current = processthreads[coroutine.running()]
+        local pdata = _processdata[self]
+        assert(current,"process must be exist")
+        assert(current == pdata.parent,"process must be parent")
+        local cpdata = _processdata[current]
+        if pdata.returntype == 0 then return else
+            local rt,r = pdata.returntype,pdata.retval
+            table.remove(current.children,table.find(current.children,self))
+            processtbl[pdata.pid] = nil
+            --process should be removed from memory
+            return rt - 1,r
+        end
+    end
     function processmt.new(name,init,sigh,parent,user,pid,stdin,stdout,stderr,tty,argv,filepath,pubenv,privenv,trueuser,groupuser)
         pid = pid or getnewPID()
         user = user or "root"
@@ -554,8 +568,10 @@ local function newProcessTable()
         pdata.filepath = filepath
         pdata.forked = false
         thr = newThread(mainthreadrunner,init,self)
+        processthreads[thr] = self
         pdata.mainthread = thr
         pdata.threads={thr}
+        pdata.privenv={}
         pdata.trueuser = trueuser or pdata.trueuser
         dispatchThread(thr,init,self)
         procDeleteThread(coroutine.running())
