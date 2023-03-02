@@ -274,6 +274,8 @@ local function newSystem()
         rootfs=rootfs,
         du=du,
 
+        publicapi=publicapi,
+
         populateDevFolder = function()
             newStreamFile("null",devdir,"root","rw-rw-rw-",function(op,a1)
                 if op == "r" then
@@ -331,12 +333,12 @@ local function newSystem()
             table.insert(powerdownhooks,f)
         end,
         shutdown=function(ty,wait)
-            if ty == "poweroff" or ty == "halt" or ty == "reboot" then
+            if ty == "poweroff" or ty == "halt" or ty == "reboot" or ty == "forcereboot" or ty == "forcehalt" then
                 pr.terminate()
                 for _,f in ipairs(powerdownhooks) do
                     coroutine.wrap(f)(ty)
                 end
-            elseif ty == "force" then
+            elseif ty == "force" or ty == "powerfail" or ty == "forcepoweroff" then
                 wait = wait or 3
                 for pid,proc in ipairs(pr.processtbl) do
                     pr.runFuncAsRoot(proc.sendSignal,proc,Signals.SIGPWR)
