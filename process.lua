@@ -257,6 +257,7 @@ local function newProcessTable()
         pdata.children = {}
         pdata.retval = signal
         pdata.returntype = 2
+        parent:sendSignal(Signal.SIGCHLD)
     end
     local function exitProcess(proc,ret)
         local pdata = _processdata[proc]
@@ -284,6 +285,7 @@ local function newProcessTable()
         pdata.children = {}
         pdata.retval = ret
         pdata.returntype = 1
+        parent:sendSignal(Signal.SIGCHLD)
     end
     local function mainthreadrunner(func,proc)
         local pdata = _processdata[proc]
