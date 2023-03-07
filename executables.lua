@@ -259,6 +259,7 @@ local function populateExecutables(kernelAPI)
                 end
             end
         end
+        return metadata
     end
     function shinit(proc,forked)
         if forked == true then
