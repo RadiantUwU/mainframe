@@ -344,10 +344,15 @@ local function newProcessTable()
         groupuser = groupuser or nil
         parent = parent or processtbl[1]
         local proc = {}
+        local pdata
         setmetatable(proc,processmt)
         processtbl[pid] = proc
         local function onwrite()
-            proc:sendSignal(Signal.SIGIO)
+            local sigh = pdata.sigh[Signal.SIGIO]
+            if sigh then
+                processthreads[coroutine.running()] = proc
+                sigh(proc)
+            end
         end
         _processdata[proc] = {
             pid = pid,
@@ -374,7 +379,7 @@ local function newProcessTable()
             pubenv=table_clone(pubenv or {}),
             privenv=table_clone(privenv or {})
         }
-        local pdata = _processdata[proc]
+        pdata = _processdata[proc]
         pdata.mainthread = pdata.threads[1]
         processthreads[pdata.mainthread] = proc
         dispatchThread(pdata.mainthread,init,proc)

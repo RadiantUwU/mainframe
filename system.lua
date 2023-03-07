@@ -257,6 +257,46 @@ local function newSystem()
         terminate=function()
             deleteThread(coroutine.running())
             while true do coroutine.yield() end
+        end,
+        getstdin=function()
+            local proc = pr.processthreads[coroutine.running()]
+            assert(proc,"no process found")
+            return proc:getStdIn()
+        end,
+        getstdout=function()
+            local proc = pr.processthreads[coroutine.running()]
+            assert(proc,"no process found")
+            return proc:getStdOut()
+        end,
+        getstderr=function()
+            local proc = pr.processthreads[coroutine.running()]
+            assert(proc,"no process found")
+            return proc:getStdErr()
+        end,
+        getch=function(blocking)
+            if blocking == nil then blocking = true end
+            local proc = pr.processthreads[coroutine.running()]
+            local yield = proc:getAPI().yield
+            assert(proc,"no process found")
+            if blocking then
+                while true do
+                    local stdin = proc:getStdIn()
+                    if stdin then
+                        if stdin:available() > 0 then
+                            return stdin:read(1)
+                        end
+                    end
+                    yield()
+                end
+            else
+                local stdin = proc:getStdIn()
+                if stdin then
+                    if stdin:available() > 0 then
+                        return stdin:read(1)
+                    end
+                end
+                return ""
+            end
         end
     }
     pr.setKernelAPI(publicapi)
