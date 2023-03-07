@@ -297,6 +297,9 @@ local function newSystem()
                 end
                 return ""
             end
+        end,
+        getproc=function(pid)
+            return processtbl[pid]
         end
     }
     pr.setKernelAPI(publicapi)
