@@ -331,7 +331,7 @@ local function newProcessTable()
         local cpdata = _processdata[current]
         if pdata.returntype == 0 then return else
             local rt,r = pdata.returntype,pdata.retval
-            table.remove(current.children,table.find(current.children,self))
+            table.remove(cpdata.children,table.find(cpdata.children,self))
             processtbl[pdata.pid] = nil
             --process should be removed from memory
             return rt - 1,r
