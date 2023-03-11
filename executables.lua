@@ -103,12 +103,20 @@ local function populateExecutables(kernelAPI)
             elseif state == "newcmd" and (c == "\"" or c == "'") then
                 metadata['command'..tostring(cc)],skip,state = strparse(proc:getPrivEnv("cmdbuffer"):sub(ii,-1)),"newarg"
                 skip = skip + 1
-            elseif (state == "cmd" or state == "newcmd") and (c == " " or c == "\n" or c == EOF) then
+            elseif (state == "cmd" or state == "newcmd") and (c == " ") then
                 if #buffer1 > 0 then
                     metadata['command'..tostring(cc)] = buffer1
                     buffer1 = ""
                     state = "newarg"
                 end
+            elseif (state == "cmd" or state == "newcmd") and (c == "\n" or c == EOF) then
+                if #buffer1 > 0 then
+                    metadata['command'..tostring(cc)] = buffer1
+                    buffer1 = ""
+                    cc = cc + 1
+                    ca = 0
+                end
+                state = "newcmd"
             elseif state == "cmd" or state == "newcmd" then
                 buffer1 = buffer1 .. c
                 state = "cmd"
@@ -157,9 +165,7 @@ local function populateExecutables(kernelAPI)
                         buffer1 = ""
                         ca = ca + 1
                     end
-                    state = "newcmd"
-                    cc = cc +1
-                    ca = 0
+                    state = "pipeor"
                 elseif (c == "\"" or c == "'") then
                     if #buffer1 > 0 then
                         metadata['arg'..tostring(cc).."_"..tostring(ca)] = buffer1
@@ -184,7 +190,7 @@ local function populateExecutables(kernelAPI)
                     ca = 0
                 elseif c == EOF or c == "\n" then
                     state = "newcmd"
-                    metadata["cmdtype"..tostring(cc+1)] = "job"
+                    metadata["cmdtype"..tostring(cc)] = "job"
                     cc = cc +1
                     ca = 0
                 else
@@ -257,9 +263,72 @@ local function populateExecutables(kernelAPI)
                 else
                     buffer1 = buffer1 .. c
                 end
+            elseif state == "pipeor" then
+                if c == "|" then
+                    metadata["cmdcond"..tostring(cc+1)] = "anycase"
+                    cc = cc + 1
+                    ca = 0
+                    state = "newcmd"
+                else
+                    cc = cc + 1
+                    ca = 0
+                    state = "newcmd"
+                    metadata["output_"..tostring(cc-1)] = cc
+                    metadata["intput_"..tostring(cc)] = cc - 1
+                    if state == "newcmd" and (c == "\"" or c == "'") then
+                        metadata['command'..tostring(cc)],skip,state = strparse(proc:getPrivEnv("cmdbuffer"):sub(ii,-1)),"newarg"
+                        skip = skip + 1
+                    elseif (state == "cmd" or state == "newcmd") and (c == " ") then
+                        if #buffer1 > 0 then
+                            metadata['command'..tostring(cc)] = buffer1
+                            buffer1 = ""
+                            state = "newarg"
+                        end
+                    elseif (state == "cmd" or state == "newcmd") and (c == "\n" or c == EOF) then
+                        if #buffer1 > 0 then
+                            metadata['command'..tostring(cc)] = buffer1
+                            buffer1 = ""
+                            cc = cc + 1
+                            ca = 0
+                        end
+                        state = "newcmd"
+                    elseif state == "cmd" or state == "newcmd" then
+                        buffer1 = buffer1 .. c
+                        state = "cmd"
+                    end
+                end
             end
         end
         return metadata
+    end
+    local function shexecmd(proc,data)
+        local cc,ca = 0,0
+        local cs = data["command_"..tostring(cc)]
+        local success = true
+        local api = proc:getAPI()
+        local yield = api.yield
+        while cs do
+            ca = 0
+            local cmdtype,cmdcond,command = data["cmdtype"..tostring(cc)] or "sequential",data["cmdcond"..tostring(cc)] or "success",command = cs
+            local args,arg = {},data["arg"..tostring(cc).."_"..tostring(ca)]
+            while arg do
+                args[ca+1] = arg
+                ca = ca + 1
+                arg = data["arg"..tostring(cc).."_"..tostring(ca)]
+            end
+            if not (cmdcond == "success" and not success) then
+                if cmdtype == "sequential" then
+                    proc:setPrivEnv("cmd",command)
+                    proc:setPrivEnv("args",args)
+                    proc:fork(shinit)
+                    while proc:getPrivEnv("busy") do
+                        yield()
+                    end
+                    success = (proc:getPrivEnv("retval") == 0 and proc:getPrivEnv("rettype") == 0)
+                    
+                end
+            end
+        end
     end
     function shinit(proc,forked)
         if forked == true then
@@ -285,14 +354,42 @@ local function populateExecutables(kernelAPI)
                     proc:getStdOut():write("$ ")
                 end
                 shreadcmd(proc,proc:getAPI().getch)
-
+                local succ,data = pcall(shparsecmd,proc)
+                if not succ then
+                    proc:getStdErr():write(data .. "\n")
+                else
+                    succ = pcall(shexecmd,proc,data)
+                    if not succ then
+                        proc:getStdErr():write(data .. "\n")
+                    end
+                end
             end
         else
             proc:setPrivEnv("cmdproc",forked) -- PID
+            proc:setPrivEnv("busy",true)
             -- await for it to return from function
         end
     end
     newFile("sh",bindir,"root","rwxr-xr-x",function()
-        return shinit,{}
+        return shinit,{
+            [Signal.SIGCHLD] = function(proc)
+                local api = proc:getAPI()
+                local getproc = api.getproc
+                for _,cpid in ipairs(proc:getChildren()) do
+                    local cp = getproc(cpid)
+                    if cp:getStat() == "Z" then
+                        if cpid== proc:getPrivEnv("cmdproc") then
+                            local rt,r = cp:collect()
+                            proc:setPrivEnv("retval",r)
+                            proc:setPrivEnv("rettype",rt)
+                            proc:setPrivEnv("cmdproc",nil)
+                            proc:setPrivEnv("busy",false)
+                        else
+                            cp:collect()
+                        end
+                    end
+                end
+            end
+        }
     end)
 end
