@@ -5,7 +5,7 @@ local function populateExecutables(kernelAPI)
     local shinit
     local function shreadcmd(proc,getch)
         local c = getch()
-        while c ~= "\n" then
+        while c ~= "\n" do
             if c == "\b" then
                 proc:setPrivEnv("cmdbuffer",proc:getPrivEnv("cmdbuffer"):sub(1,-2))
             else
@@ -309,7 +309,7 @@ local function populateExecutables(kernelAPI)
         local yield = api.yield
         while cs do
             ca = 0
-            local cmdtype,cmdcond,command = data["cmdtype"..tostring(cc)] or "sequential",data["cmdcond"..tostring(cc)] or "success",command = cs
+            local cmdtype,cmdcond,command = data["cmdtype"..tostring(cc)] or "sequential",data["cmdcond"..tostring(cc)] or "success",cs
             local args,arg = {},data["arg"..tostring(cc).."_"..tostring(ca)]
             while arg do
                 args[ca+1] = arg
