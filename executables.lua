@@ -47,7 +47,7 @@ local function populateExecutables(kernelAPI)
     end
     local function hextochar(hex)
         local n = 0
-        local s = #oct
+        local s = #hex
         for i = 1,s do
             n = n + _hextn(hex:sub(i,i))*(16^(s-i))
         end
@@ -396,5 +396,14 @@ local function populateExecutables(kernelAPI)
                 end
             end
         }
+    end)
+    local function echoinit(proc,forked)
+        local args = proc:getArgs()
+        local all = table.concat(args," ")
+        proc:getStdOut():write(all)
+        return 0
+    end
+    newFile("echo",bindir,"root","rwxr-xr-x",function()
+        return echoinit,{}
     end)
 end
