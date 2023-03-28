@@ -325,7 +325,12 @@ local function populateExecutables(kernelAPI)
                         yield()
                     end
                     success = (proc:getPrivEnv("retval") == 0 and proc:getPrivEnv("rettype") == 0)
-                    
+                elseif cmdtype == "job" then
+                    proc:setPrivEnv("cmd",command)
+                    proc:setPrivEnv("args",args)
+                    proc:fork(shinit)
+                    proc:setPrivEnv("cmdproc",false)
+                    proc:setPrivEnv("busy", false)
                 end
             end
         end
