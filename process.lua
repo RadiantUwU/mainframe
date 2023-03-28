@@ -455,6 +455,14 @@ local function newProcessTable()
             if self.stat ~= "R" then return end
             suspendthreads(self)
             -- suspended
+        elseif signal == Signal.SIGCHLD then
+            for _,pid in ipairs(self:getChildren()) do
+                local p = processtbl[pid]
+                local cdata = _processdata[p]
+                if cdata.stat == "Z" then
+                    p:collect()
+                end
+            end
         elseif isCriticalSignal(signal) then
             if pdata.pid == 1 then onInitKill() else killProcess(self,pdata) end
         else
