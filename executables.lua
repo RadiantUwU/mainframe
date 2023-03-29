@@ -302,11 +302,25 @@ local function populateExecutables(kernelAPI)
         return metadata
     end
     local function shexecmd(proc,data)
+        local api = proc:getAPI()
+        local yield,open = api.yield,api.open
         local cc,ca = 0,0
         local cs = data["command_"..tostring(cc)]
+        local function openfileifexistsor(f,s,sw)
+            if not f then return s end
+            return open(f,sw)
+        end
+        local ifile = data["input_"..tostring(cc)]
+        local ofile = data["output_"..tostring(cc)]
+        local afile = data["append_"..tostring(cc)]
+        local istream = openfileifexistsor(ifile,proc:getStdIn(),"r")
+        local wstream
+        if ofile then
+            wstream = openfileifexistsor(ofile,proc:getStdOut(),"w")
+        else
+            wstream = openfileifexistsor(afile,proc:getStdOut(),"a")
+        end
         local success = true
-        local api = proc:getAPI()
-        local yield = api.yield
         while cs do
             ca = 0
             local cmdtype,cmdcond,command = data["cmdtype"..tostring(cc)] or "sequential",data["cmdcond"..tostring(cc)] or "success",cs
@@ -320,6 +334,8 @@ local function populateExecutables(kernelAPI)
                 if cmdtype == "sequential" then
                     proc:setPrivEnv("cmd",command)
                     proc:setPrivEnv("args",args)
+                    proc:setPrivEnv("_stdin",istream)
+                    proc:setPrivEnv("_stdout",wstream)
                     proc:fork(shinit)
                     while proc:getPrivEnv("busy") do
                         yield()
@@ -328,6 +344,8 @@ local function populateExecutables(kernelAPI)
                 elseif cmdtype == "job" then
                     proc:setPrivEnv("cmd",command)
                     proc:setPrivEnv("args",args)
+                    proc:setPrivEnv("_stdin",istream)
+                    proc:setPrivEnv("_stdout",wstream)
                     proc:fork(shinit)
                     proc:setPrivEnv("cmdproc",false)
                     proc:setPrivEnv("busy", false)
@@ -343,6 +361,8 @@ local function populateExecutables(kernelAPI)
             local command = proc:getPrivEnv("cmd")
             local args = proc:getPrivEnv("args")
             local api = proc:getAPI()
+            proc:changeStdIn(proc:getPrivEnv("_stdin"))
+            proc:changeStdOut(proc:getPrivEnv("_stdout"))
             local exec,exit = api.exec,api.exit
             local success,err = pcall(exec,command,table.unpack(args))
             if not success then
