@@ -289,12 +289,18 @@ local function newProcessTable()
     end
     local function mainthreadrunner(func,proc)
         local pdata = _processdata[proc]
-        local success = pcall(function() if pdata.forked then
+        local success,errn = pcall(function() if pdata.forked then
             pdata.retval = func(proc,pdata.forked) or 0
         else
             pdata.retval = func(proc,-1) or 0
         end end)
-        if success then pdata.returntype = 1 else pdata.returntype = 2 pdata.retval = Signals.SIGABRT end
+        if success then pdata.returntype = 1 else 
+            pdata.returntype = 2 pdata.retval = Signal.SIGABRT 
+            local stderr = pdata.stderr
+            if stderr then
+                stderr:write(errn.."\n")
+            end
+        end
         terminateyieldproc(proc)
         for _,thr in ipairs(pdata.threads) do
             procDeleteThread(thr)

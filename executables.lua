@@ -426,4 +426,21 @@ local function populateExecutables(kernelAPI)
     newFile("echo",bindir,"root","rwxr-xr-x",function()
         return echoinit,{}
     end)
+    local function catinit(proc,forked)
+        local filename = proc:getArgs()[1]
+        if filename == "--help" then
+            proc:getStdOut():write("Usage: cat [FILE]")
+            proc:getAPI().exit(0)
+            return
+        end
+        local file = proc:getAPI().open(filename,"r")
+        assert(file,"file does not exist.")
+        local outs = proc:getStdOut()
+        if outs then
+            outs:write(file)
+        end
+    end
+    newFile("cat",bindir,"root","rwxr-xr-x",function()
+        return catinit,{}
+    end)
 end
