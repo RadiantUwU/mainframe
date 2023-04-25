@@ -437,8 +437,9 @@ local function populateExecutables(kernelAPI)
         assert(file,"file does not exist.")
         local outs = proc:getStdOut()
         if outs then
-            outs:write(file)
+            outs:write(file:readAll())
         end
+        file:close()
     end
     newFile("cat",bindir,"root","rwxr-xr-x",function()
         return catinit,{}
