@@ -5671,3 +5671,4 @@ end
 
 end
 --rbx return LoadstringModule
+--lua function LoadStringModule() return function(str,env) return load(str,"loadstring","t",env) end end
