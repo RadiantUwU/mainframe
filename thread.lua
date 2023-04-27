@@ -1,5 +1,7 @@
-local isRoblox = game and workspace and Vector3 and UDim2
-if isRoblox then isRoblox = true else isRoblox = false end
+--rbx local isRoblox = true
+--compat local isRoblox = game and workspace and Vector3 and UDim2
+--compat if isRoblox then isRoblox = true else isRoblox = false end
+--lua local isRoblox = false
 local newThread
 local deleteThread
 local dispatchThread
@@ -39,7 +41,7 @@ else --legacy support
         return thr
     end
     function deleteThread(thread)
-        --there is no valid way to make sure a thread is killed
+        coroutine.close(thread)
     end
     function dispatchThread(thr,...)
         coroutine.resume(thr,...)

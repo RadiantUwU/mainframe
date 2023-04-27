@@ -72,3 +72,4 @@ local function newPublicEvent()
         end
     },frozenMetaTable)
 end
+--rbx return {newPrivateEvent=newPrivateEvent,newPublicEvent=newPublicEvent}

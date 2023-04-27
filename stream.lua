@@ -1,3 +1,5 @@
+--rbx local newmutex = require(script.Parent.mutex)
+--rbx local newPrivateEvent = require(script.Parent.dispatchableEvent).newPrivateEvent
 local streammt = {}
 local genstreammt = {}
 local _streamdata = setmetatable({},{__mode="k"})
@@ -138,6 +140,8 @@ local function newGenStream(func)
     _streameventcall[obj] = evcall
     return setmetatable(obj,genstreammt)
 end
+streammt.new = newStream
+genstreammt.new = newGenStream
 
 local function newBasicStdin(func,allowWrite)
     allowWrite = allowWrite or false
@@ -318,3 +322,5 @@ local function newStreamWithData(tbl,key)
         end
     end)
 end
+
+--rbx return {newGenStream=newGenStream,newStream=newStream,streammt=streammt,genstreammt=genstreammt,newBasicStdin=newBasicStdin,newBasicStdout=newBasicStdout,newBasicStderr=newBasicStderr,cloneStream=cloneStream,newStreamWithData=newStreamWithData}

@@ -1,3 +1,4 @@
+--rbx local table_clone = require(script.Parent.table_extend).table_clone
 local function MutexModule()
     local MutexCls = {}
     local _private = setmetatable({},{__mode="k"})
@@ -41,7 +42,7 @@ local function MutexModule()
     if panicEnabled then
         function MutexCls:panic()
             local t = _private[self]
-            local nt = table.clone(t)
+            local nt = table_clone(t)
             _private[self] = setmetatable({},{__mode="k"})
             for _,thr in ipairs(nt) do
                 coroutine.resume(thr,true)
@@ -60,3 +61,4 @@ local function MutexModule()
     end
 end
 local newmutex = MutexModule()
+--rbx return newmutex
