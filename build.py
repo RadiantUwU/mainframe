@@ -28,6 +28,18 @@ output = {
             "name":"thread.lua",
             "dependencies":[]
         },
+        {
+            "name":"primitiveserializers.lua",
+            "dependencies":[]
+        },
+        {
+            "name":"serializers.lua",
+            "dependencies":[]
+        },
+        {
+            "name":"cpu_thread.lua",
+            "dependencies":[]
+        },
         "returnedobject.lua"
     ]
 }

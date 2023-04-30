@@ -46,9 +46,8 @@ else --legacy support
     function dispatchThread(thr,...)
         coroutine.resume(thr,...)
     end
-    require "socket"
-
     function sleepWait(sec)
-        socket.select(nil, nil, sec)
+        -- no existent method
     end
 end
+--rbx return {newThread=newThread,deleteThread=deleteThread,dispatchThread=dispatchThread,sleepWait=sleepWait}
