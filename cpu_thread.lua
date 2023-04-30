@@ -227,7 +227,10 @@ local instruction_switch={
         end
     end,
     [Instructions.SYSCALL]=function (system)
-        error("not implemented")
+        local i,size = serializers.ulong:decode(system:getcode())
+        system:incpc(size)
+        system._insyscall = true
+        system.syscallf(i)
     end,
     [Instructions.YIELD]=function (system)
         system._yielding = true
@@ -640,6 +643,7 @@ local instruction_switch={
 function cpuinterpreter()
     local system = _cputhreads[coroutine.running()]
     while true do
+        system._insyscall = false
         if system._yielding then
             if system.waitingthread then
                 coroutine.resume(system.waitingthread)
@@ -669,16 +673,28 @@ local function cputhreadstart()
     end
     coroutine.yield()
     system.state = "running"
-    cpuinterpreter()
+    pcall(cpuinterpreter)
+    system.state = "dead"
+    if system.waitingthread then
+        coroutine.resume(system.waitingthread)
+        system.waitingthread = nil
+    end
+    system.memory = {}
+    system.address_stack = {}
+    system.locals_stack = {}
+    system.reversed_memory = setmetatable({},{__mode="kv"})
+    system.object_stack = {}
+    system.code = ""
 end
-
-local function newCPUThread()
+local function newCPUThread(syscallf)
     local thread = newThread(cputhreadstart)
     local cputhread = {
         _yielding=false,
         thread=thread,
         state="none",
         nilobj=nilobj,
+        _insyscall=false,
+        syscallf=syscallf,
 
         waitingthread=nil,
 
