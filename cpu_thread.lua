@@ -686,7 +686,8 @@ local function cputhreadstart()
     system.object_stack = {}
     system.code = ""
 end
-local function newCPUThread(syscallf)
+local function newCPUThread(syscallf,dupthread)
+    dupthread = dupthread or {}
     local thread = newThread(cputhreadstart)
     local cputhread = {
         _yielding=false,
@@ -698,14 +699,14 @@ local function newCPUThread(syscallf)
 
         waitingthread=nil,
 
-        memory={},
-        reversed_memory=setmetatable({},{__mode="kv"}),
+        memory=dupthread.memory or {},
+        reversed_memory=dupthread.reversed_memory or setmetatable({},{__mode="kv"}),
         address_stack={},
         locals_stack={},
         object_stack={},
-        code="",
+        code=dupthread.code or "",
         codeindex=1,
-        codeaddresses={1},
+        codeaddresses=dupthread.codeaddresses or {1},
         pc=0,
         incpc=function (self,a)
             self.pc = self.pc+a
@@ -734,7 +735,7 @@ local function newCPUThread(syscallf)
             return self.locals_stack[self:fetchstackindex()]
         end,
         getcode=function (self)
-            return self.code:sub(self.pc)
+            return self.code:sub(self.pc+self.codeaddresses[self.codeindex])
         end,
 
         start=function (self)
